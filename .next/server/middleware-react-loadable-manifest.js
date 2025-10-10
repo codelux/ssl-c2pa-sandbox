@@ -1,0 +1,1 @@
+self.__REACT_LOADABLE_MANIFEST="{\"lib/c2paClient.ts -> c2pa\":{\"id\":\"lib/c2paClient.ts -> c2pa\",\"files\":[\"static/chunks/_app-pages-browser_node_modules_c2pa_dist_c2pa_esm_js.js\"]}}"
