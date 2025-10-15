@@ -144,16 +144,19 @@ export default function Page() {
         const resp = await fetch('/api/sign', { method: 'POST', body: form });
         if (!resp.ok) {
           let msg = 'Signing failed';
+          let hint = '';
           const ct = resp.headers.get('content-type') || '';
           try {
             if (ct.includes('application/json')) {
               const j = await resp.json();
               msg = j?.detail || j?.error || JSON.stringify(j);
+              hint = j?.hint || '';
             } else {
               msg = await resp.text();
             }
           } catch {}
-          throw new Error((msg || '').toString().slice(0, 500));
+          const fullMsg = hint ? `${msg}\n\n${hint}` : msg;
+          throw new Error((fullMsg || '').toString().slice(0, 800));
         }
         const blob = await resp.blob();
         const url = URL.createObjectURL(blob);
@@ -181,7 +184,10 @@ export default function Page() {
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setStatus(`Error: ${msg}`);
-      toast.error(`Signing failed: ${msg.slice(0, 150)}`, { id: 'sign', duration: 6000 });
+      // Show longer toast for errors with hints (demo mode errors)
+      const duration = msg.includes('Quick fix') || msg.includes('c2patool') ? 10000 : 6000;
+      const displayMsg = msg.length > 300 ? msg.slice(0, 300) + '...' : msg;
+      toast.error(`Signing failed:\n\n${displayMsg}`, { id: 'sign', duration, style: { maxWidth: '600px' } });
     }
   }, [imageFile, keys.privateKey, keys.pkcs8Pem, certPem, manifestJson, useServerSigner]);
 

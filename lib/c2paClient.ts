@@ -41,23 +41,28 @@ export async function signImageWithManifest(opts: SignOpts): Promise<Blob> {
   for (const wasm of wasmCandidates) {
     for (const worker of workerCandidates) {
       try {
+        console.log(`[C2PA] Trying to initialize with WASM: ${wasm}, Worker: ${worker}`);
         if (typeof c2paMod.C2pa?.create === 'function') {
           c2pa = await c2paMod.C2pa.create({
             wasmSrc: publicC2paAsset(wasm),
             workerSrc: publicC2paAsset(worker),
           });
+          console.log('[C2PA] Successfully initialized using C2pa.create');
         } else if (typeof c2paMod.create === 'function') {
           c2pa = await c2paMod.create({
             wasmSrc: publicC2paAsset(wasm),
             workerSrc: publicC2paAsset(worker),
           });
+          console.log('[C2PA] Successfully initialized using create');
         } else {
           // Some versions may work without explicit init
           c2pa = c2paMod;
+          console.log('[C2PA] Using module directly (no explicit init)');
         }
         lastErr = null;
         break;
       } catch (e) {
+        console.warn(`[C2PA] Failed to initialize with ${wasm}/${worker}:`, e);
         lastErr = e;
       }
     }
@@ -86,8 +91,10 @@ export async function signImageWithManifest(opts: SignOpts): Promise<Blob> {
 
   let signer: any;
   if (typeof c2paMod.Signer?.create === 'function') {
+    console.log('[C2PA] Creating signer using Signer.create');
     signer = await c2paMod.Signer.create(signerOpts);
   } else if (typeof c2paMod.createSigner === 'function') {
+    console.log('[C2PA] Creating signer using createSigner');
     try {
       signer = await c2paMod.createSigner(signerOpts);
     } catch {
@@ -95,8 +102,10 @@ export async function signImageWithManifest(opts: SignOpts): Promise<Blob> {
     }
   } else {
     // Fallback: pass signer as a plain object; c2pa.sign may build internally
+    console.log('[C2PA] Using plain signer object (no factory method found)');
     signer = signerOpts;
   }
+  console.log('[C2PA] Signer created:', signer ? 'success' : 'failed');
 
   // Ensure manifest has a TSA URL reachable from the browser.
   // Prefer the app's proxy to avoid CORS issues with staging TSA.
@@ -175,8 +184,12 @@ export async function signImageWithManifest(opts: SignOpts): Promise<Blob> {
   }
 
   // Try sign on created instance and on the module itself
+  console.log('[C2PA] Attempting to sign using c2pa instance...');
   let blob = await trySign(c2pa);
-  if (!blob) blob = await trySign(c2paMod);
+  if (!blob) {
+    console.log('[C2PA] c2pa instance sign failed, trying c2paMod...');
+    blob = await trySign(c2paMod);
+  }
 
   // Try writer APIs
   async function tryWriter(factoryOwner: any): Promise<Blob | null> {
@@ -207,13 +220,25 @@ export async function signImageWithManifest(opts: SignOpts): Promise<Blob> {
     return null;
   }
 
-  if (!blob) blob = await tryWriter(c2paMod);
-  if (!blob) blob = await tryWriter(c2pa);
-  if (blob) return blob;
+  if (!blob) {
+    console.log('[C2PA] Sign methods failed, trying writer API on c2paMod...');
+    blob = await tryWriter(c2paMod);
+  }
+  if (!blob) {
+    console.log('[C2PA] c2paMod writer failed, trying c2pa writer...');
+    blob = await tryWriter(c2pa);
+  }
+  if (blob) {
+    console.log('[C2PA] Successfully signed image, returning blob');
+    return blob;
+  }
 
   // Fallback: return original image blob if no output recognized
   console.warn('c2pa sign returned an unexpected result shape. Attempts:', attemptErrors);
-  throw new Error('C2PA sign did not return a Blob');
+  const errorDetails = attemptErrors.length > 0
+    ? `\n\nAttempt errors:\n${attemptErrors.map((e, i) => `${i + 1}. ${e}`).join('\n')}`
+    : '';
+  throw new Error(`C2PA sign did not return a Blob${errorDetails}`);
 }
 
 export async function verifyAsset(file: File | Blob): Promise<unknown> {

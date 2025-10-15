@@ -119,7 +119,25 @@ export async function POST(req: Request) {
       logger.error('c2patool sign failed', { reqId, code: run.code, stderr: run.stderr });
       // Clean up temp dir
       try { rmSync(tmp, { recursive: true, force: true }); } catch {}
-      const hint = run.stderr?.includes('ENOENT') ? `c2patool not found or not executable. Set C2PATOOL_PATH to an absolute path to the binary and ensure it is executable (chmod +x). Current value resolved to: ${c2paTool}` : undefined;
+
+      let hint = undefined;
+      if (run.code === -1 || run.stderr?.includes('ENOENT') || run.stderr?.includes('not found')) {
+        hint = `c2patool binary not found or not executable. To use demo mode:
+1. Install c2patool: https://github.com/contentauth/c2patool
+2. Set C2PATOOL_PATH environment variable to the binary path
+3. Ensure it's executable: chmod +x /path/to/c2patool
+
+Alternatively, uncheck "Quick demo mode" to sign with your own certificate and keys (main workflow).
+
+Current C2PATOOL_PATH: ${c2paTool}`;
+      } else if (run.stderr?.includes('time stamp') || run.stderr?.includes('timestamp')) {
+        hint = `c2patool failed to generate timestamp. This is likely due to network issues or TSA endpoint configuration.
+
+Quick fix: Uncheck "Quick demo mode" to sign with your own certificate and keys instead (the main workflow for this tool).
+
+If you need demo mode, ensure c2patool can reach the TSA endpoints listed in the footer.`;
+      }
+
       return NextResponse.json({ error: 'Signing failed', reqId, detail: run.stderr?.slice(0, 2000), hint }, { status: 500 });
     }
 
