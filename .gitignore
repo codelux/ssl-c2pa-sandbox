@@ -1,3 +1,6 @@
 node_modules/
 .DS_Store
 c2patool*
+.env
+.next/cache/
+.next/static/webpack/*.hot-update.*
