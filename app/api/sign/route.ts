@@ -33,13 +33,18 @@ export async function POST(req: Request) {
   if (!limited.ok) return NextResponse.json({ error: 'Rate limit exceeded', reqId }, { status: 429 });
 
   try {
-    // Accept multipart form with fields: file (binary), manifest (json string)
+    // Accept multipart form with fields: file (binary), manifest (json string), optional: certPem, privateKeyPem
     const form = await req.formData();
     const file = form.get('file');
     const manifestStr = form.get('manifest');
+    const certPem = form.get('certPem'); // optional: user's certificate
+    const privateKeyPem = form.get('privateKeyPem'); // optional: user's private key
+
     if (!(file instanceof File) || typeof manifestStr !== 'string') {
       return NextResponse.json({ error: 'Invalid form data', reqId }, { status: 400 });
     }
+
+    const useUserCredentials = typeof certPem === 'string' && typeof privateKeyPem === 'string';
 
     // Prepare temp workspace
     const tmp = mkdtempSync(join(tmpdir(), 'c2pa-'));
@@ -48,9 +53,17 @@ export async function POST(req: Request) {
     const inPath = join(tmp, `input${ext}`);
     const outPath = join(tmp, `signed${ext}`);
     const manifestPath = join(tmp, 'manifest.json');
+    const certPath = join(tmp, 'cert.pem');
+    const keyPath = join(tmp, 'private.key');
 
     const arr = new Uint8Array(await file.arrayBuffer());
     writeFileSync(inPath, arr);
+
+    // Write user credentials to temp files if provided
+    if (useUserCredentials) {
+      writeFileSync(certPath, certPem as string, 'utf8');
+      writeFileSync(keyPath, privateKeyPem as string, 'utf8');
+    }
     // Transform manifest to c2patool-friendly shape if needed
     try {
       const mRaw: unknown = JSON.parse(manifestStr);
@@ -88,13 +101,36 @@ export async function POST(req: Request) {
           }
           return rec;
         });
+
+        // Add user credentials to manifest if provided
+        if (useUserCredentials) {
+          obj.private_key = keyPath;
+          obj.sign_cert = certPath;
+        }
+
         writeFileSync(manifestPath, JSON.stringify(obj), 'utf8');
       } else {
-        writeFileSync(manifestPath, manifestStr, 'utf8');
+        // If not an object, parse and add credentials
+        let manifestObj = JSON.parse(manifestStr);
+        if (useUserCredentials) {
+          manifestObj.private_key = keyPath;
+          manifestObj.sign_cert = certPath;
+        }
+        writeFileSync(manifestPath, JSON.stringify(manifestObj), 'utf8');
       }
     } catch {
-      // If parsing fails, write as-is
-      writeFileSync(manifestPath, manifestStr, 'utf8');
+      // If parsing fails, try to add credentials anyway
+      try {
+        let manifestObj = JSON.parse(manifestStr);
+        if (useUserCredentials) {
+          manifestObj.private_key = keyPath;
+          manifestObj.sign_cert = certPath;
+        }
+        writeFileSync(manifestPath, JSON.stringify(manifestObj), 'utf8');
+      } catch {
+        // Last resort: write as-is
+        writeFileSync(manifestPath, manifestStr, 'utf8');
+      }
     }
 
     // Path to c2patool binary (env or default in PATH)

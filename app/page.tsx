@@ -7,7 +7,7 @@ import { Card } from '@/components/Card';
 import { Dropzone } from '@/components/Dropzone';
 import { ManifestSchema, Presets } from '@/lib/manifest';
 import { generateCsrPem } from '@/lib/csr';
-import { signImageWithManifest, verifyAsset } from '@/lib/c2paClient';
+import { verifyAsset } from '@/lib/c2paClient';
 
 type KeyMaterial = {
   privateKey?: CryptoKey;
@@ -137,50 +137,45 @@ export default function Page() {
       setStatus('Signing image…');
       toast.loading('Signing image...', { id: 'sign' });
 
-      if (useServerSigner) {
-        const form = new FormData();
-        form.append('file', imageFile);
-        form.append('manifest', JSON.stringify(res.data));
-        const resp = await fetch('/api/sign', { method: 'POST', body: form });
-        if (!resp.ok) {
-          let msg = 'Signing failed';
-          let hint = '';
-          const ct = resp.headers.get('content-type') || '';
-          try {
-            if (ct.includes('application/json')) {
-              const j = await resp.json();
-              msg = j?.detail || j?.error || JSON.stringify(j);
-              hint = j?.hint || '';
-            } else {
-              msg = await resp.text();
-            }
-          } catch {}
-          const fullMsg = hint ? `${msg}\n\n${hint}` : msg;
-          throw new Error((fullMsg || '').toString().slice(0, 800));
-        }
-        const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'signed-' + (imageFile.name || 'image');
-        a.click();
-        URL.revokeObjectURL(url);
-        setVerifyReport('Signed (server demo)');
-        setStatus('Image signed successfully');
-        toast.success('Image signed and downloaded!', { id: 'sign' });
-      } else {
-        if (!keys.privateKey || !certPem || !keys.pkcs8Pem) throw new Error('Missing key/cert');
-        const blob = await signImageWithManifest({ image: imageFile, manifestJson: res.data, certificatePem: certPem, privateKeyPem: keys.pkcs8Pem, tsaUrl: process.env.NEXT_PUBLIC_TSA_URL });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'signed-' + (imageFile.name || 'image');
-        a.click();
-        URL.revokeObjectURL(url);
-        setVerifyReport('Signed (client)');
-        setStatus('Image signed successfully');
-        toast.success('Image signed and downloaded!', { id: 'sign' });
+      // All signing now happens server-side using c2patool
+      const form = new FormData();
+      form.append('file', imageFile);
+      form.append('manifest', JSON.stringify(res.data));
+
+      // Add user credentials if not in demo mode
+      if (!useServerSigner) {
+        if (!keys.pkcs8Pem || !certPem) throw new Error('Missing certificate or private key');
+        form.append('certPem', certPem);
+        form.append('privateKeyPem', keys.pkcs8Pem);
       }
+
+      const resp = await fetch('/api/sign', { method: 'POST', body: form });
+      if (!resp.ok) {
+        let msg = 'Signing failed';
+        let hint = '';
+        const ct = resp.headers.get('content-type') || '';
+        try {
+          if (ct.includes('application/json')) {
+            const j = await resp.json();
+            msg = j?.detail || j?.error || JSON.stringify(j);
+            hint = j?.hint || '';
+          } else {
+            msg = await resp.text();
+          }
+        } catch {}
+        const fullMsg = hint ? `${msg}\n\n${hint}` : msg;
+        throw new Error((fullMsg || '').toString().slice(0, 800));
+      }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'signed-' + (imageFile.name || 'image');
+      a.click();
+      URL.revokeObjectURL(url);
+      setVerifyReport(useServerSigner ? 'Signed (demo mode with default cert)' : 'Signed (with your SSL.com cert)');
+      setStatus('Image signed successfully');
+      toast.success('Image signed and downloaded!', { id: 'sign' });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setStatus(`Error: ${msg}`);
