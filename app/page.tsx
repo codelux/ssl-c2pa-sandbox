@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import Image from 'next/image';
+import toast from 'react-hot-toast';
 import { Card } from '@/components/Card';
 import { Dropzone } from '@/components/Dropzone';
 import { ManifestSchema, Presets } from '@/lib/manifest';
@@ -64,32 +65,37 @@ export default function Page() {
   const [preset, setPreset] = useState<'minimal' | 'editorial'>('minimal');
 
   const generateKeysAndCsr = useCallback(async () => {
-    setStatus('Generating EC P-256 keypair…');
-    const kp = await crypto.subtle.generateKey(
-      { name: 'ECDSA', namedCurve: 'P-256' },
-      true,
-      ['sign', 'verify']
-    );
-    const exported = await exportKeys(kp);
-    setKeys({ privateKey: kp.privateKey, publicKey: kp.publicKey, ...exported });
-    setStatus('Keys ready in memory • not uploaded');
     try {
+      setStatus('Generating EC P-256 keypair…');
+      toast.loading('Generating keys...', { id: 'keygen' });
+      const kp = await crypto.subtle.generateKey(
+        { name: 'ECDSA', namedCurve: 'P-256' },
+        true,
+        ['sign', 'verify']
+      );
+      const exported = await exportKeys(kp);
+      setKeys({ privateKey: kp.privateKey, publicKey: kp.publicKey, ...exported });
+
       const csr = await generateCsrPem({
         publicKey: kp.publicKey,
         privateKey: kp.privateKey,
         subject: { CN: subjectCN || undefined, O: subjectO || undefined, C: subjectC || undefined },
       });
       setCsrPem(csr);
+      setStatus('Keys ready in memory • not uploaded');
+      toast.success('Keys and CSR generated successfully!', { id: 'keygen' });
     } catch (e: any) {
       setCsrPem('');
-      setStatus(`CSR error: ${e?.message || e}`);
+      const msg = e?.message || String(e);
+      setStatus(`Error: ${msg}`);
+      toast.error(`Failed to generate keys: ${msg}`, { id: 'keygen' });
     }
   }, [subjectCN, subjectO, subjectC]);
 
   const requestCertificate = useCallback(async () => {
-    // TODO: send CSR to /api/cert-requests; for now, stub
     setCertPem('');
     setStatus('Requesting certificate…');
+    toast.loading('Requesting certificate from SSL.com...', { id: 'cert' });
     try {
       const res = await fetch('/api/cert-requests', {
         method: 'POST',
@@ -105,8 +111,11 @@ export default function Page() {
       if (!res.ok) throw new Error(data?.error || 'Request failed');
       setCertPem(data.certificatePem || '');
       setStatus('Certificate received');
+      toast.success('Certificate received successfully!', { id: 'cert' });
     } catch (e: any) {
-      setStatus(`Cert request error: ${e.message || e}`);
+      const msg = e.message || String(e);
+      setStatus(`Error: ${msg}`);
+      toast.error(`Failed to get certificate: ${msg}`, { id: 'cert' });
     }
   }, [csrPem, profileId, conformingProductId, subjectCN, subjectO, subjectC]);
 
@@ -121,10 +130,13 @@ export default function Page() {
       const res = ManifestSchema.safeParse(parsed);
       if (!res.success) {
         setManifestError('Invalid manifest');
+        toast.error('Invalid manifest JSON');
         return;
       }
       setManifestError('');
       setStatus('Signing image…');
+      toast.loading('Signing image...', { id: 'sign' });
+
       if (useServerSigner) {
         const form = new FormData();
         form.append('file', imageFile);
@@ -151,6 +163,8 @@ export default function Page() {
         a.click();
         URL.revokeObjectURL(url);
         setVerifyReport('Signed (server demo)');
+        setStatus('Image signed successfully');
+        toast.success('Image signed and downloaded!', { id: 'sign' });
       } else {
         if (!keys.privateKey || !certPem || !keys.pkcs8Pem) throw new Error('Missing key/cert');
         const blob = await signImageWithManifest({ image: imageFile, manifestJson: res.data, certificatePem: certPem, privateKeyPem: keys.pkcs8Pem, tsaUrl: process.env.NEXT_PUBLIC_TSA_URL });
@@ -161,10 +175,13 @@ export default function Page() {
         a.click();
         URL.revokeObjectURL(url);
         setVerifyReport('Signed (client)');
+        setStatus('Image signed successfully');
+        toast.success('Image signed and downloaded!', { id: 'sign' });
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      setStatus(`Sign error: ${msg}`);
+      setStatus(`Error: ${msg}`);
+      toast.error(`Signing failed: ${msg.slice(0, 150)}`, { id: 'sign', duration: 6000 });
     }
   }, [imageFile, keys.privateKey, keys.pkcs8Pem, certPem, manifestJson, useServerSigner]);
 

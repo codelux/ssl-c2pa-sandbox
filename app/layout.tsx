@@ -5,11 +5,13 @@ export const metadata = {
 
 import './globals.css';
 import Image from 'next/image';
+import { Toaster } from 'react-hot-toast';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body className="bg-hero">
+        <Toaster position="top-right" />
         <header className="border-b bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
           <div className="mx-auto max-w-5xl px-4 py-3 flex items-center gap-3">
             <Image src="/assets/logo.svg" width={120} height={40} alt="SSL.com" style={{ height: 40, width: 'auto' }} />

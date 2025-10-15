@@ -26,10 +26,12 @@ export async function signImageWithManifest(opts: SignOpts): Promise<Blob> {
 
   // Try common initialization patterns across c2pa versions
   const wasmCandidates = [
+    'toolkit_bg.wasm',
     'c2pa_wasm_bg.wasm',
     'c2pa_wasm.wasm',
   ];
   const workerCandidates = [
+    'c2pa.worker.js',
     'c2pa_worker.js',
     'worker.js',
   ];
@@ -219,7 +221,7 @@ export async function verifyAsset(file: File | Blob): Promise<unknown> {
   let c2pa: any = c2paMod;
   if (typeof c2paMod.C2pa?.create === 'function') {
     try {
-      c2pa = await c2paMod.C2pa.create({ wasmSrc: publicC2paAsset('c2pa_wasm_bg.wasm'), workerSrc: publicC2paAsset('c2pa_worker.js') });
+      c2pa = await c2paMod.C2pa.create({ wasmSrc: publicC2paAsset('toolkit_bg.wasm'), workerSrc: publicC2paAsset('c2pa.worker.js') });
     } catch {
       // try using module directly
       c2pa = c2paMod;
