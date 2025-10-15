@@ -117,7 +117,7 @@ export async function signImageWithManifest(opts: SignOpts): Promise<Blob> {
     if (anyOut instanceof Blob) return anyOut;
     if (anyOut instanceof ArrayBuffer) return new Blob([anyOut], { type: image.type });
     if (anyOut?.buffer instanceof ArrayBuffer) return new Blob([anyOut.buffer], { type: image.type });
-    if (anyOut instanceof Uint8Array) return new Blob([anyOut], { type: image.type });
+    if (anyOut instanceof Uint8Array) return new Blob([anyOut as Uint8Array<ArrayBuffer>], { type: image.type });
     if (anyOut?.blob instanceof Blob) return anyOut.blob;
     if (anyOut?.file instanceof Blob) return anyOut.file;
     if (anyOut?.signed instanceof Blob) return anyOut.signed;

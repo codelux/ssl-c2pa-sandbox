@@ -1,8 +1,8 @@
 export default function DocsPage() {
   return (
     <div className="prose prose-sm max-w-none">
-      <h1>Sandbox API</h1>
-      <p>Endpoints are documented for the preview environment. Production issuance can be added later with minimal changes.</p>
+      <h1>C2PA Developer Tool API</h1>
+      <p>This tool provides a frontend for testing SSL.com&apos;s C2PA certificate issuance, signing, and verification APIs.</p>
 
       <h2>POST /api/cert-requests</h2>
       <p>Proxies a CSR to the issuance API using server-side secrets. The server transforms the request to match the upstream schema.</p>
@@ -20,10 +20,10 @@ export default function DocsPage() {
   "conforming_product_id": "...",
   "experimental": { "CN": "Example", "O": "Org", "C": "US" }
 }`}</pre>
-      <p>Headers:</p>
+      <p>Headers (account is inferred from Bearer token):</p>
       <pre>{`Authorization: Bearer <YOUR_ACCOUNT_TOKEN>
 Content-Type: application/json`}</pre>
-      <p>Note: X-Account-ID header is not required; the account is inferred from the token.</p>
+      <p><strong>Note:</strong> The <code>X-Account-ID</code> header is <strong>not required</strong>. Your account is automatically inferred from the Bearer token.</p>
       <pre>{`Response (JSON)
 {
   "certificatePem": "-----BEGIN CERTIFICATE-----...",

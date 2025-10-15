@@ -1,300 +1,246 @@
-# C2PA Sandbox — Product & Technical Spec (v2)
+# C2PA Developer Tool — Technical Spec
 
 ## Overview
 
-We are members of the C2PA and the only publicly trusted CA offering C2PA-conformant certificates. This sandbox and its accompanying API documentation are intended to let companies start integrating today against a preview environment. When production certificates are available, we will be able to issue them seamlessly and, if needed, expand this tool to include production issuance workflows.
+This is a lightweight web-based developer tool that provides a frontend for testing SSL.com's C2PA certificate issuance, signing, and verification API endpoints. It allows developers to experiment with the full C2PA workflow—from generating keypairs and CSRs to signing images with manifests and verifying provenance—all with pretty-printed output for debugging.
 
-Audience: developers, integrators, and partners evaluating C2PA signing and verification.
+**Audience:** Developers, integrators, and partners evaluating SSL.com's C2PA APIs.
 
+## Goals
 
-## 1) Goals & Non-Goals
+- **Lightweight UI** for testing SSL.com's C2PA developer API endpoints
+- **Browser-based key generation** (EC P-256) and CSR creation
+- **Certificate issuance** via SSL.com's API
+- **Manifest editing** with JSON presets and live validation
+- **Image signing** with C2PA manifests and TSA timestamps
+- **Verification** with pretty-printed assertion and manifest data
+- **Download capabilities** for keys, certificates, CSRs, and signed assets
+- **cURL command display** for easy API integration into production apps
 
-Goals
+## Non-Goals
 
-- One-page, lightweight app to:
-  - Generate EC keypair client-side and CSR
-  - Request a C2PA certificate (server proxies your dev API)
-  - Edit/replace the C2PA manifest (JSON editor + presets)
-  - Sign an image using the obtained cert + private key
-  - Embed TSA timestamp (staging TSA)
-  - Verify the signed asset and show a human-readable report
-  - Download: private key (PKCS#8), certificate (PEM), signed asset, manifest JSON
-- Deployable on DigitalOcean App Platform or a Droplet with zero-ops setup.
-- Friendly, branded, “preview/sandbox” feel; clear disclaimers.
-- Footer with API documentation for
+- Multi-tenant accounts, RBAC, or billing
+- Long-term storage of user assets or keys
+- Production-grade deployment infrastructure (this is a simple developer tool)
+- Complex sandbox environment management
 
-Non-Goals (for v2)
+## User Stories
 
-- Multi-tenant accounts, RBAC, audit trails, or billing.
-- Long-term storage of user assets/keys on our servers.
-- Heavy load / perf-testing (this is a preview).
+### 1. Issue & Sign
+1. Generate EC P-256 keypair and CSR in browser
+2. Request C2PA certificate from SSL.com API (using shared test token or own credentials)
+3. Upload an image (PNG/JPEG)
+4. Edit manifest JSON (use presets or write custom assertions)
+5. Sign image with certificate and TSA timestamp
+6. Verify and view pretty-printed output
+7. Download signed image, private key, and certificate
 
-## 2) User Stories (Happy Paths)
+### 2. Verify Only
+1. Upload a signed image
+2. Click Verify
+3. View pretty-printed claims, timestamp info, and trust chain
 
-1. Issue & Sign
-  1. I drag an image (PNG/JPEG) into the app.
-  1. I hit Generate Keys & CSR → my browser creates EC keypair + CSR.
-  1. I hit Request Certificate → server proxy creates a cert (using your dev API), returns PEM.
-  1. I open Manifest Editor, use a preset, tweak fields, ensure ta_url points to staging TSA.
-  1. I click Sign Image → browser embeds C2PA manifest with my cert and TSA timestamp.
-  1. I see Verification pass and download my signed image, cert, private key, and manifest.
-1. Verify Only
-  1. I drag in a previously signed file.
-  1. I click Verify → see claims, timestamp source, trust chain, warnings if any.
-1. Replace Manifest
-  1. I import an existing manifest JSON, tweak, and re-sign the original image.
+### 3. API Integration
+1. Generate keys and CSR
+2. View the cURL command showing how to call the certificate issuance API
+3. Copy cURL command and integrate into own application
 
-## 3) UX / Branding
+## Architecture
 
-Single-page layout: three stacked cards with tabs for advanced options.
+### Frontend
+- **Next.js** (App Router) + React
+- **Tailwind CSS** for styling
+- **WebCrypto** for EC P-256 keypair generation (client-side)
+- **pkijs** for CSR generation in browser
+- **c2pa-js** for C2PA signing and verification (WASM-based)
 
-- Header: SSL.com logo + “C2PA Preview Sandbox” badge. Short explainer/disclaimer.
-- Card A — Keys & Certificate
-  - Buttons: Generate Keys & CSR, Request Certificate, Download Private Key, Download Cert
-  - Status pill (e.g., “Keys in memory only • not uploaded”)
-- Card B — Image & Manifest
-  - Drag-and-drop image zone (with small preview)
-  - Manifest Editor (JSON textarea with live schema hints, formatting, presets dropdown)
-  - Sign Image button
-- Card C — Verify
-  - Verify button (auto-runs post-sign)
-  - Result panel: green/amber/red summary + expandable details (assertions, TSA, chain, warnings)
-- Footer: Links to staging Trust Bundles (ECC/RSA) and TSA endpoints; “Preview environment — expect changes”.
+### Backend (Minimal)
+- **Next.js API routes** for:
+  - `/api/cert-requests` - Proxies CSR to SSL.com certificate issuance API
+  - `/api/tsa/timestamp` - Optional TSA proxy (if CORS issues)
+  - `/api/sign` - Optional demo signing using c2patool binary (quick demo mode)
 
-Visuals
+### Storage
+- **Client-side only** - Keys and manifests in browser memory
+- **No server persistence** - Files processed in memory only
+- **Optional localStorage** for convenience (disabled by default)
 
-- Clean light theme; Tailwind + shadcn/ui; accessible contrast; minimal SSL.com styling (blue accents, rounded 2xl cards, subtle shadows).
-- Copy tone: helpful, transparent, concise.
+## API Integration
 
-## 4) Architecture Overview
+### Certificate Issuance (SSL.com API)
 
-Front end: Next.js (App Router) + React, Tailwind, shadcn/ui.
- Crypto & C2PA:
+**Endpoint:** `POST https://api.c2patool.io/api/v1/certificate-requests`
 
-- WebCrypto for EC P-256 keypair generation and PKCS#8 export (download).
-- CSR generation in browser (pkijs or node-forge via WASM/bundled build).
-- C2PA sign/verify via a browser-compatible C2PA library (e.g., c2pa-js + WASM).
-  - Configure manifest’s ta_url to the staging TSA.
-  - If CORS blocks TSA, fall back to server proxy /api/tsa/*.
-
-Backend (thin)
-
-- Next.js API routes:
-  - /api/cert-requests → server-side call to your dev C2PA issuance API using server-only X-Account-ID + Authorization (kept in DO Secrets). Returns certificate PEM to client.
-  - /api/tsa/* (optional) → proxy TSA requests if CORS requires it; return raw bytes; no persistence.
-
-Storage
-
-- Keys and manifest live in-memory on the client. Optional: encrypted localStorage toggle (off by default). No server DB.
-
-Observability
-
-- Console + toast logs client-side.
-- Server logs to stdout (captured by DO).
-- Lightweight metrics (request counts, errors) using a tiny logger.
-
-## 5) Security & Privacy
-
-- Keys never leave the browser. Private key is generated with WebCrypto and only exported for user download.
-- Server secrets (Account ID, Bearer token, API base) live only in DO Secrets/Env. Never shipped to client.
-- No uploads stored on our server; files processed in memory; optional DO Spaces can be enabled later.
-- CSP & Headers: strict CSP, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, SameSite cookies (if any).
-- Rate Limiting: IP-based rate limit on /api/cert-requests and /api/tsa/* (e.g., 30/minute) to protect preview infra.
-- Clear Disclaimers: Preview only; do not use for production content; subject to change.
-
-## 6) API Integrations
-
-### 6.1 Certificate Request (Server → Your Dev API)
-
-- POST /api/cert-requests
-  - Body (from client): { csr: string (PEM), profileId?: string, conformingProductId?: string, subject?: { CN, O, C } }
-  - Server action: Transform to your dev API schema; inject X-Account-ID, Authorization from env; POST to https://api.c2patool.io/api/v1/certificate-requests.
-  - Response to client: { certificatePem: string, requestId?: string, meta?: any }
-- Notes
-  - Mask secrets in logs.
-  - Handle 4xx/5xx with user-friendly messages.
-
-### 6.2 TSA Timestamp (Optional Proxy)
-
-- POST /api/tsa/timestamp → proxies to https://api.staging.c2pa.ssl.com/v1/timestamp (ECC default).
-  - Pass through content-type and binary body.
-  - Strict size limits (e.g., 10 MB).
-
-## 6.3 Developer & Sandbox Documentation
-
-### Purpose
-
-This section enables developers, partners, and testers to experiment with SSL.com’s C2PA preview environment independently.
- It outlines core endpoints, authentication requirements, and example payloads.
-
-### Base URLs
-
-### Core Endpoints
-
-### Authentication
-
-All requests must include:
-
-Authorization: Bearer <API_TOKEN>
-X-Account-ID: <ACCOUNT_UUID>
+**Headers:**
+```
+Authorization: Bearer <YOUR_ACCOUNT_TOKEN>
 Content-Type: application/json
+```
 
-⚠️ Do not hard-code tokens in the frontend build; read them from environment variables or a secure proxy.
+**Note:** The `X-Account-ID` header is **not required**. Account is inferred from the Bearer token.
 
-### Example cURL – Certificate Issuance
-
-curl --location 'https://api.c2patool.io/api/v1/certificate-requests' \
---header 'X-Account-ID: fc23c1e2-f186-43f0-99ff-43b621dcff6e' \
---header 'Authorization: Bearer <token>' \
---header 'Content-Type: application/json' \
---data '{
-  "certificate_profile_id": "6ba3b70c-38fe-44c3-803f-910c5873d1d6",
-  "certificate_signing_request": "<PEM_CSR>",
+**Request Body:**
+```json
+{
+  "certificate_profile_id": "764b6cdd-1c1b-4a46-9967-22a112a0b390",
+  "certificate_signing_request": "-----BEGIN CERTIFICATE REQUEST-----\n...\n-----END CERTIFICATE REQUEST-----",
   "conforming_product_id": "f5ac57ef-428e-4a82-8852-7bde10b33060",
   "experimental": {
-      "CN": "Demo Certificate CN",
-      "O": "SSL.com Corporation",
-      "C": "US"
+    "CN": "Demo Certificate CN",
+    "O": "SSL.com Corporation",
+    "C": "US"
   }
-}'
+}
+```
 
-### Suggested Sandbox Flow
+**Response:**
+```json
+{
+  "certificatePem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
+  "requestId": "req_xxx"
+}
+```
 
-1. Upload Image → Generate CSR → Request Certificate
-1. Edit or Replace Manifest Assertion
-1. Sign Asset → Timestamp via ECC/RSA Endpoint
-1. Download Signed Asset, Manifest, and Certificate
-1. Optionally Verify signature and manifest integrity.
+### Profile IDs
+- **RSA Profile:** `6ba3b70c-38fe-44c3-803f-910c5873d1d6`
+- **ECC Profile:** `764b6cdd-1c1b-4a46-9967-22a112a0b390` (default)
 
-### Developer Notes
+### TSA Endpoints
+- **ECC (default):** `https://api.staging.c2pa.ssl.com/v1/timestamp`
+- **RSA:** `https://api.staging.c2pa.ssl.com/v1/timestamp/rsa`
 
-- Respect preview-environment rate limits and traffic guidance.
-- Use ECC endpoints for lighter payloads; RSA for compatibility testing.
-- Validate signed outputs against the C2PA reference verifier.
-- Report anomalies or interoperability issues via the SSL.com feedback channel.
+## UI Components
 
-## 7) Client Flows & State
+### Card A: Keys & Certificate
+- Generate Keys & CSR button
+- Request Certificate button
+- Download Private Key, Certificate, and CSR buttons
+- Show/Hide API cURL toggle
+- Input fields for subject CN, O, C
+- Profile dropdown (RSA/ECC)
+- Conforming Product ID field with random UUID generator
+- Status indicator (e.g., "Keys in memory only • not uploaded")
 
-### 7.1 Generate Keys & CSR (Client)
+### Card B: Image & Manifest
+- Drag-and-drop image upload
+- Image preview
+- Manifest JSON textarea with syntax highlighting
+- Preset dropdown (Minimal, Editorial)
+- TSA dropdown (ECC, RSA)
+- Sign Image button
+- Format JSON button
+- Download Manifest button
+- Quick demo mode checkbox (uses c2patool if configured)
 
-1. WebCrypto: ECDSA P-256, extractable private key for download.
-1. Build CSR (pkijs/forge), Subject defaults:
-  1. CN: “Demo Certificate CN”
-  1. O: “SSL.com Corporation”
-  1. C: “US”
-1. Show success + enable Request Certificate.
+### Card C: Verify
+- Verify button
+- Status badge (Pass/Warning/Fail)
+- Pretty-printed verification report with assertions, timestamp, and chain info
 
-### 7.2 Request Certificate (Client → Server)
+### Footer
+- Links to TSA endpoints and trust bundles
+- Developer tool branding
 
-1. POST /api/cert-requests with CSR + optional profileId, conformingProductId, subject override.
-1. Server talks to dev API; returns PEM.
-1. Store PEM in client state; enable Sign Image.
+## Security & Privacy
 
-### 7.3 Manifest Editing
+- **Client-side key generation** - Private keys never leave the browser
+- **No server storage** - Keys and assets processed in memory only
+- **Shared test token** - Pre-filled for quick testing (users can replace with own token)
+- **Rate limiting** - ~30/min per IP on API routes
+- **CSP & Security Headers** - Configured in `next.config.js`
 
-- JSON editor with:
-  - Presets: “Basic Photo”, “Newsroom Photo”, “Marketing Asset”
-  - Auto-insert "ta_url": "https://api.staging.c2pa.ssl.com/v1/timestamp" (editable)
-  - Schema hints + validate/format button
-  - Import/Export manifest JSON
+## Testing Workflow
 
-### 7.4 Sign Image (Client)
+1. **Generate Keys & CSR** - Browser generates EC P-256 keypair
+2. **Request Certificate** - Tool calls `/api/cert-requests` which proxies to SSL.com API
+3. **Upload Image** - User drags PNG/JPEG into dropzone
+4. **Edit Manifest** - User selects preset or writes custom JSON
+5. **Sign Image** - Tool uses c2pa-js (or c2patool in demo mode) to embed manifest
+6. **Verify** - Tool verifies signature and displays pretty-printed output
+7. **Download** - User saves private key, certificate, and signed image
 
-1. User drags image (PNG/JPEG).
-1. Use c2pa-js (or equivalent) to:
-  1. Build C2PA claim from user manifest JSON.
-  1. Use private key + cert PEM for signing.
-  1. Include TSA timestamp via ta_url (direct or via /api/tsa/timestamp if needed).
-1. Return signed asset (same file type) for download.
-1. Auto-trigger Verify.
+## Optional: Quick Demo Mode
 
-### 7.5 Verify (Client)
+For users who want to test without credentials:
+- Download c2patool binary
+- Set `C2PATOOL_PATH` environment variable
+- Download trust bundle and set `TRUST_ANCHORS_PATH`
+- Enable "Quick demo mode" checkbox
 
-- Run verification on the signed asset.
-- Show:
-  - Signature OK / warnings
-  - Claims list (title, creator, date, edits)
-  - Timestamp status (TSA URL; time)
-  - Chain / trust bundle reference (link to ECC/RSA bundles in staging)
+This mode uses server-side c2patool signing instead of the API.
 
-## 8) Data Model (Client State)
+## Environment Variables
 
-type KeyMaterial = {
-  privateKeyCrypto: CryptoKey;      // in-memory
-  publicKeyCrypto: CryptoKey;
-  privateKeyPkcs8?: ArrayBuffer;    // only for download; not stored by default
-};
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `AUTH_TOKEN` | SSL.com account token | Shared test token |
+| `API_BASE` | SSL.com API base URL | `https://api.c2patool.io` |
+| `TSA_URL` | Timestamp Authority URL | `https://api.staging.c2pa.ssl.com/v1/timestamp` |
+| `CERT_PROFILE_ID` | Default certificate profile | ECC profile |
+| `CONFORMING_PRODUCT_ID` | Default product UUID | Random UUID |
+| `C2PATOOL_PATH` | Path to c2patool binary (demo mode) | Not set |
+| `TRUST_ANCHORS_PATH` | Trust bundle path (demo mode) | Not set |
 
-type Certificate = {
-  pem: string;                      // returned from server
-};
+## Deployment
 
-type Manifest = {
-  json: any;                        // validated object
-};
+This is a simple Next.js app that can be deployed anywhere:
 
-type Asset = {
-  original: File | ArrayBuffer;
-  signed?: ArrayBuffer;
-};
+- **Local:** `npm run dev`
+- **Vercel/Netlify:** Connect repo and deploy
+- **DigitalOcean App Platform:** Deploy from GitHub
+- **Docker:** Standard Next.js Docker setup
 
-type Verification = {
-  status: 'ok' | 'warning' | 'error';
-  details: any;
-};
+No complex infrastructure needed—just a Node.js environment and environment variables for API credentials.
 
-## 9) Validation, Errors, and Edge Cases
+## Development Commands
 
-- CSR errors: show inline tips (CN/O/C missing, unsupported curve, malformed PEM).
-- Cert issuance errors: surface upstream message + link “Try again later”.
-- Manifest JSON invalid: block “Sign” until valid; “Format JSON” helper.
-- Large images: client-side size limit (e.g., 15 MB); compress tip if exceeded.
-- TSA unreachable/CORS: retry with proxy; if still fails, proceed without timestamp only if user explicitly accepts a warning (default: block).
-- Verification mismatch: show red banner; offer to download raw report for debugging.
+```bash
+npm install          # Install dependencies
+npm run dev          # Start dev server
+npm run build        # Build for production
+npm start            # Run production build
+npm run lint         # Lint code
+npm run typecheck    # Type check
+npm run qa           # Run all checks + build
+```
 
-## 10) Deployment (DigitalOcean)
+## Data Flow
 
-### Option A — App Platform (recommended)
+```
+User Browser
+    ↓ (WebCrypto generates keypair)
+    ↓ (pkijs generates CSR)
+    ↓ POST /api/cert-requests
+Next.js API Route
+    ↓ POST to SSL.com API (with server-side AUTH_TOKEN)
+SSL.com API
+    ↓ Returns certificate PEM
+Next.js API Route
+    ↓ Returns cert to browser
+User Browser
+    ↓ (c2pa-js signs image with cert + manifest)
+    ↓ (TSA timestamps the signature)
+    ↓ Downloads signed image
+```
 
-- Repo: single Next.js app.
-- Environment Variables (Build & Run):
-  - C2PA_API_BASE=https://api.c2patool.io
-  - C2PA_ACCOUNT_ID=... (Secret)
-  - C2PA_BEARER_TOKEN=... (Secret)
-  - C2PA_TSA_BASE=https://api.staging.c2pa.ssl.com/v1
-  - C2PA_TSA_URL_DEFAULT=https://api.staging.c2pa.ssl.com/v1/timestamp
-  - NODE_OPTIONS=--max_old_space_size=1024
-- Build command: next build
-- Run command: next start
-- Auto-HTTPS via DO.
-- Set scaling to 1–3 instances; enable DO rate limiting if available.
+## Acceptance Criteria
 
-### Option B — Droplet
+- ✅ Generate EC P-256 keypairs in browser
+- ✅ Request C2PA certificates from SSL.com API
+- ✅ Edit manifest JSON with presets
+- ✅ Sign images with certificates and TSA timestamps
+- ✅ Verify signed images and display pretty-printed output
+- ✅ Download private keys, certificates, CSRs, and signed assets
+- ✅ Display cURL commands for API integration
+- ✅ Pre-fill with shared test token for quick testing
+- ✅ Support RSA and ECC profiles
+- ✅ Support ECC and RSA TSA endpoints
+- ✅ No X-Account-ID header in cURL (per API requirements)
 
-- Ubuntu LTS, Node 20.x, PM2 or systemd service.
-- Nginx reverse proxy with gzip + HTTP/2 + TLS.
-- Same env vars via /etc/environment or systemd unit.
+## Future Enhancements (Optional)
 
-Optional: DO Spaces (disabled by default)
-
-- Bucket for temporary file caching if needed; auto-purge job; never store private keys.
-
-## 11) Testing & Acceptance Criteria
-
-### 1. Functional Testing
-
-### 2. UI/UX Testing
-
-### 3. Performance & Reliability
-
-### 4. Security and Compliance
-
-### 5. Acceptance for Staging Release
-
-- All critical paths (upload, sign, verify, download) pass functional testing.
-- UI matches SSL.com branding and loads in <3s.
-- DigitalOcean deployment verified with HTTPS endpoint.
-- API responses verified with both ECC and RSA timestamp endpoints.
-- Core security checklist (API key handling, CORS, CSP) validated.
-- Documentation updated with endpoint usage and setup steps.
-- QA signoff and demo to CTO/CEO for preview launch.
+- Support for additional image formats (WebP, AVIF, etc.)
+- Multi-image batch signing
+- Advanced manifest editing with schema autocomplete
+- Export verification reports as PDF
+- Integration with other C2PA tools and validators

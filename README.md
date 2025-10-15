@@ -1,108 +1,178 @@
-# C2PA Preview Sandbox
+# C2PA Developer Tool
 
-Issue, sign, and verify C2PA content in a preview environment.
+A lightweight web interface for testing SSL.com's C2PA certificate issuance, signing, and verification API endpoints. Generate keys, request certificates, sign images with C2PA manifests, and verify provenance—all with pretty-printed output for easy debugging.
 
-## Getting Started
+## What This Tool Does
 
-1) Create `.env.local` with values based on `.env.example` (server-only secrets).
+This tool provides a simple UI for developers to:
 
-2) Install dependencies and run (requires Node 18+):
+1. **Generate EC keypairs** (P-256) and CSRs in the browser
+2. **Request C2PA certificates** from SSL.com's developer API
+3. **Edit C2PA manifest assertions** with JSON presets and live editing
+4. **Sign images** with certificates and embed timestamped manifests
+5. **Verify signed assets** and view pretty-printed assertion data
+6. **Download** private keys, certificates, CSRs, and signed assets
+7. **Copy cURL commands** for easy API integration into your own apps
 
-```
+## Quick Start
+
+### 1. Install Dependencies
+
+```bash
 npm install
+```
+
+### 2. Configure Environment (Optional)
+
+Copy `.env.example` to `.env.local`:
+
+```bash
+cp .env.example .env.local
+```
+
+The tool comes pre-configured with a shared test token for quick testing. To use your own credentials, update `AUTH_TOKEN` in `.env.local` with your account token from SSL.com.
+
+### 3. Run the Development Server
+
+```bash
 npm run dev
 ```
 
-Open http://localhost:3000.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-- API docs page: http://localhost:3000/docs
+## How to Use
 
-### Adding c2pa (for sign/verify)
+### Basic Flow
 
-- First, check available versions in your environment:
+1. **Generate Keys & CSR** - Click to create an EC P-256 keypair in your browser
+2. **Request Certificate** - Send the CSR to SSL.com's API and receive a C2PA certificate
+3. **Upload an Image** - Drag and drop a PNG or JPEG file
+4. **Edit Manifest** - Use presets or write custom JSON assertions
+5. **Sign Image** - Embed the manifest with your certificate and timestamp
+6. **Verify** - Check the signature and view pretty-printed claims
+7. **Download** - Save your private key, certificate, and signed image
 
-```
-npm view c2pa version
-```
+### API Integration
 
-- Then install a published version (replace X.Y.Z with the version you saw):
+The tool displays a ready-to-use cURL command that shows exactly how to call the certificate issuance API. Click "Show API cURL" to see the command with your current settings, then copy it for use in your own applications.
 
-```
-npm install c2pa@X.Y.Z
-```
+**Example cURL:**
 
-- If you already have a working version from your prototype, you can pin that exact version.
-
-## Notes
-
-- Keys are generated client-side and kept in memory by default.
-- `app/api/cert-requests` forwards to `API_BASE` when `ACCOUNT_ID`/`AUTH_TOKEN` are set; otherwise returns a preview stub certificate to enable the flow.
-
-### Validate your CSR and key locally (macOS)
-
-View CSR details:
-
-```
-openssl req -in request.csr.pem -noout -text -verify
-```
-
-View private key details (PKCS#8):
-
-```
-openssl pkey -in private_key.pk8.pem -noout -text
+```bash
+curl --location 'https://api.c2patool.io/api/v1/certificate-requests' \
+--header 'Content-Type: application/json' \
+--header 'Authorization: Bearer 9b049052a999e98dd5c63b480c523c703a9df4d633910310f0b965bc278993ab' \
+--data '{
+    "certificate_profile_id": "764b6cdd-1c1b-4a46-9967-22a112a0b390",
+    "certificate_signing_request": "-----BEGIN CERTIFICATE REQUEST-----\n...\n-----END CERTIFICATE REQUEST-----",
+    "conforming_product_id": "f5ac57ef-428e-4a82-8852-7bde10b33060",
+    "experimental": {
+        "CN": "Demo Certificate CN",
+        "O": "SSL.com Corporation",
+        "C": "US"
+    }
+}'
 ```
 
-Compare public keys match (they should be identical):
+**Note:** The `X-Account-ID` header is not required—your account is inferred from the Bearer token.
+
+## Certificate Profiles
+
+Two profile IDs are available:
+
+- **ECC Profile** (default): `764b6cdd-1c1b-4a46-9967-22a112a0b390`
+- **RSA Profile**: `6ba3b70c-38fe-44c3-803f-910c5873d1d6`
+
+Select your preferred profile from the dropdown in the UI.
+
+## TSA Endpoints
+
+Timestamping is provided by SSL.com's staging TSA:
+
+- **ECC (default)**: `https://api.staging.c2pa.ssl.com/v1/timestamp`
+- **RSA**: `https://api.staging.c2pa.ssl.com/v1/timestamp/rsa`
+
+Use the TSA dropdown in the manifest editor to switch between ECC and RSA.
+
+## Optional: Quick Demo Mode
+
+If you want to test signing without credentials, you can enable "Quick demo mode" which uses the c2patool CLI binary for signing.
+
+### Setup for Demo Mode:
+
+1. Download the c2patool binary for your platform
+2. Set `C2PATOOL_PATH` in `.env.local` (e.g., `C2PATOOL_PATH=./bin/c2patool`)
+3. Download the trust bundle:
+   - ECC: https://api.staging.c2pa.ssl.com/repository/C2PA-ECC-TRUST-BUNDLE.pem
+   - RSA: https://api.staging.c2pa.ssl.com/repository/C2PA-RSA-TRUST-BUNDLE.pem
+4. Set `TRUST_ANCHORS_PATH` to the downloaded bundle path
+
+Check the "Quick demo mode" checkbox to use this feature.
+
+## Development
+
+### Lint & Type Check
+
+```bash
+npm run lint
+npm run typecheck
+```
+
+### Build for Production
+
+```bash
+npm run build
+npm start
+```
+
+### Quality Assurance
+
+```bash
+npm run qa  # Runs lint + typecheck + build
+```
+
+## API Documentation
+
+Visit [http://localhost:3000/docs](http://localhost:3000/docs) for detailed API endpoint documentation.
+
+## Project Structure
 
 ```
-openssl req -in request.csr.pem -pubkey -noout > csr.pub
-openssl pkey -in private_key.pk8.pem -pubout > key.pub
-diff -u csr.pub key.pub || echo "Keys differ"
+├── app/
+│   ├── api/
+│   │   ├── cert-requests/  # Proxies to SSL.com certificate issuance API
+│   │   ├── sign/           # Optional demo signing with c2patool
+│   │   └── tsa/            # TSA timestamp proxy
+│   ├── docs/               # API documentation page
+│   └── page.tsx            # Main UI
+├── components/             # Reusable React components
+├── lib/                    # Utilities (CSR generation, manifest schemas, etc.)
+└── public/                 # Static assets
 ```
 
-To import into Keychain, macOS prefers a .p12 with a certificate. Once you have a certificate PEM, you can bundle:
+## Security Notes
 
-```
-openssl pkcs12 -export -inkey private_key.pk8.pem -in certificate.pem -out bundle.p12
-```
-Then double-click `bundle.p12` to import into Keychain.
-- `app/api/tsa/timestamp` proxies binary timestamp requests to `TSA_URL` with size limits and rate limiting.
-- See `TODO.md` for the implementation plan derived from `SPEC.md`.
+- Private keys are generated client-side and never leave your browser
+- Keys are stored in memory only (not persisted)
+- The shared test token is for demonstration purposes only
+- For production use, obtain your own account token from SSL.com
 
-## QA
+## Environment Variables
 
-- Quick run: `npm run qa` (lint + typecheck + build)
-- Manual checks: see `QA_CHECKLIST.md`
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `AUTH_TOKEN` | Your SSL.com account Bearer token | Shared test token |
+| `API_BASE` | SSL.com C2PA API base URL | `https://api.c2patool.io` |
+| `TSA_URL` | Timestamp Authority URL | `https://api.staging.c2pa.ssl.com/v1/timestamp` |
+| `CERT_PROFILE_ID` | Default certificate profile (ECC or RSA) | ECC profile ID |
+| `CONFORMING_PRODUCT_ID` | Default conforming product UUID | Random UUID |
+| `C2PATOOL_PATH` | Path to c2patool binary (for demo mode) | Not set |
+| `TRUST_ANCHORS_PATH` | Path to trust bundle PEM (for demo mode) | Not set |
 
-## Cutover Plan (when issuance goes live)
+## Support
 
-- Set `AUTH_TOKEN` to your account token; no `X-Account-ID` header needed (account is inferred from token)
-- Toggle OFF "Use server demo signer (c2patool)" to use the client signer
-- Keep TSA URL as staging (or switch to production later)
-- The cURL panel shows the exact `certificate-requests` call for integrators
+For questions or issues with SSL.com's C2PA APIs, contact SSL.com support or visit the documentation at https://www.ssl.com/c2pa/
 
-## Environments & Domains
+## License
 
-- Local: `http://localhost:3000`
-- Preview/Staging API: `API_BASE=https://api.c2patool.io` (example) and `TSA_URL=https://api.staging.c2pa.ssl.com/v1/timestamp`
-- Production: to be announced (tool can be extended to issue production certs when ready)
-
-## Security
-
-- Server-only secrets via env (never exposed to client)
-- Basic CSP and security headers in `next.config.js`
-- In-memory rate limiting: ~30/min per IP for sensitive routes
-
-### Issuance headers
-
-- Use only `Authorization: Bearer <YOUR_ACCOUNT_TOKEN>` and `Content-Type: application/json`.
-- `X-Account-ID` header is not required; the account is inferred from the token.
-
-## Optional: Docker-based CLI demo
-
-If you have the `c2patool-demo.zip` from Slack and Docker installed, you can keep the demo alongside this repo without cluttering the app code:
-
-- Unzip the archive into `examples/c2patool-demo/`
-- Follow `examples/c2patool-demo/README.md` for build/sign/verify commands
-
-Tip: You can export a manifest from the web app and use it in the demo (`manifest.json`) to compare results.
+Private project for SSL.com

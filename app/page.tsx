@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from 'react';
+import Image from 'next/image';
 import { Card } from '@/components/Card';
 import { Dropzone } from '@/components/Dropzone';
 import { ManifestSchema, Presets } from '@/lib/manifest';
@@ -103,7 +104,7 @@ export default function Page() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Request failed');
       setCertPem(data.certificatePem || '');
-      setStatus('Certificate received (preview)');
+      setStatus('Certificate received');
     } catch (e: any) {
       setStatus(`Cert request error: ${e.message || e}`);
     }
@@ -187,17 +188,17 @@ export default function Page() {
     if (subj.CN || subj.O || subj.C) bodyOut.experimental = subj;
     const json = JSON.stringify(bodyOut);
     const cmd = [
-      `curl --location '${apiBase}/api/v1/certificate-requests'`,
-      `--header 'Content-Type: application/json'`,
-      `--header 'Authorization: Bearer <YOUR_ACCOUNT_TOKEN>'`,
+      `curl --location '${apiBase}/api/v1/certificate-requests' \\`,
+      `--header 'Content-Type: application/json' \\`,
+      `--header 'Authorization: Bearer 9b049052a999e98dd5c63b480c523c703a9df4d633910310f0b965bc278993ab' \\`,
       `--data '${json}'`,
-    ].join(' \\\n');
+    ].join('\n');
     return cmd;
   }, [profileId, csrPem, conformingProductId, subjectCN, subjectO, subjectC]);
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-gray-600">Preview only; do not use for production content; subject to change.</p>
+      <p className="text-sm text-gray-600">Developer tool for testing SSL.com C2PA API endpoints. Configure your own credentials or use the shared test token provided.</p>
 
       {/* Card A — Keys & Certificate */}
       <Card title="Keys & Certificate">
@@ -252,7 +253,7 @@ export default function Page() {
               >
                 Copy
               </button>
-              <span className="text-[11px] text-gray-500">Replace &lt;YOUR_ACCOUNT_ID&gt; and &lt;YOUR_BEARER_TOKEN&gt; with your credentials.</span>
+              <span className="text-[11px] text-gray-500">Replace &lt;YOUR_ACCOUNT_TOKEN&gt; with your account token. Shared test token is pre-filled for quick testing.</span>
             </div>
           </div>
         )}
@@ -323,7 +324,7 @@ export default function Page() {
               </button>
               <label className="inline-flex items-center gap-2 text-xs text-gray-700">
                 <input type="checkbox" checked={useServerSigner} onChange={(e) => setUseServerSigner(e.target.checked)} />
-                Use server demo signer (c2patool)
+                Quick demo mode (no credentials needed)
               </label>
               <button className="px-3 py-2 rounded border" onClick={() => setManifestJson(JSON.stringify(JSON.parse(manifestJson), null, 2))}>Format</button>
               <label className="text-xs text-gray-600">Preset</label>
@@ -414,7 +415,7 @@ export default function Page() {
       </Card>
 
       <footer className="text-xs text-gray-500 mt-8">
-        <p>Preview environment — issuance/provisioning APIs are coming soon. TSA is live now.</p>
+        <p>SSL.com C2PA Developer Tool • Test certificate issuance, signing, and verification APIs</p>
         <p className="mt-2">TSA Endpoints: ECC — https://api.staging.c2pa.ssl.com/v1/timestamp • RSA — https://api.staging.c2pa.ssl.com/v1/timestamp/rsa</p>
         <p>Trust Bundles: ECC — https://api.staging.c2pa.ssl.com/repository/C2PA-ECC-TRUST-BUNDLE.pem • RSA — https://api.staging.c2pa.ssl.com/repository/C2PA-RSA-TRUST-BUNDLE.pem</p>
       </footer>
