@@ -106,8 +106,8 @@ Content-Type: application/json
 - **ECC Profile:** `764b6cdd-1c1b-4a46-9967-22a112a0b390` (default)
 
 ### TSA Endpoints
-- **ECC (default):** `https://api.staging.c2pa.ssl.com/v1/timestamp`
-- **RSA:** `https://api.staging.c2pa.ssl.com/v1/timestamp/rsa`
+- **ECC (default):** `https://api.c2patool.io/v1/timestamp`
+- **RSA:** `https://api.c2patool.io/v1/timestamp/rsa`
 
 ## UI Components
 
@@ -175,7 +175,7 @@ This mode uses server-side c2patool signing instead of the API.
 |----------|---------|---------|
 | `AUTH_TOKEN` | SSL.com account token | Shared test token |
 | `API_BASE` | SSL.com API base URL | `https://api.c2patool.io` |
-| `TSA_URL` | Timestamp Authority URL | `https://api.staging.c2pa.ssl.com/v1/timestamp` |
+| `TSA_URL` | Timestamp Authority URL | `https://api.c2patool.io/v1/timestamp` |
 | `CERT_PROFILE_ID` | Default certificate profile | ECC profile |
 | `CONFORMING_PRODUCT_ID` | Default product UUID | Random UUID |
 | `C2PATOOL_PATH` | Path to c2patool binary (demo mode) | Not set |

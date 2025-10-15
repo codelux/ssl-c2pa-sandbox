@@ -13,7 +13,7 @@ function abToB64(buf: ArrayBuffer) {
 }
 
 function wrapPem(label: string, b64: string) {
-  const wrapped = b64.replace(/(.{64})/g, '$1\n');
+  const wrapped = b64.replace(/(.{64})/g, '$1\n').trim();
   return `-----BEGIN ${label}-----\n${wrapped}\n-----END ${label}-----`;
 }
 

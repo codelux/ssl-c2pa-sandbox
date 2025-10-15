@@ -61,17 +61,21 @@ export async function POST(req: Request) {
 
     // Write user credentials to temp files if provided
     if (useUserCredentials) {
+      // Clean up line endings - ensure Unix-style \n instead of \r\n
+      const cleanCert = (certPem as string).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      const cleanKey = (privateKeyPem as string).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
       logger.info('Writing user credentials', {
         reqId,
-        certLength: (certPem as string).length,
-        keyLength: (privateKeyPem as string).length,
-        certPreview: (certPem as string).slice(0, 100),
-        keyPreview: (privateKeyPem as string).slice(0, 100)
+        certLength: cleanCert.length,
+        keyLength: cleanKey.length,
+        certPreview: cleanCert.slice(0, 100),
+        keyPreview: cleanKey.slice(0, 100)
       });
 
-      writeFileSync(certPath, certPem as string, 'utf8');
+      writeFileSync(certPath, cleanCert, 'utf8');
       // Write the private key - it's in PKCS#8 format from WebCrypto
-      writeFileSync(keyPath, privateKeyPem as string, 'utf8');
+      writeFileSync(keyPath, cleanKey, 'utf8');
 
       // c2patool may need EC format, try to convert using openssl
       const keyPathEC = join(tmp, 'private_ec.key');
@@ -99,12 +103,29 @@ export async function POST(req: Request) {
     // Transform manifest to c2patool-friendly shape if needed
     try {
       const mRaw: unknown = JSON.parse(manifestStr);
+
+      logger.info('Processing manifest', {
+        reqId,
+        useUserCredentials,
+        hasAssertions: mRaw && typeof mRaw === 'object' && Array.isArray((mRaw as Record<string, unknown>).assertions),
+        rawManifestKeys: mRaw && typeof mRaw === 'object' ? Object.keys(mRaw as object) : null
+      });
+
       if (
         mRaw &&
         typeof mRaw === 'object' &&
         Array.isArray((mRaw as Record<string, unknown>).assertions)
       ) {
-        const obj = mRaw as { assertions: unknown[] } & Record<string, unknown>;
+        const obj = mRaw as { assertions: unknown[]; ta_url?: string } & Record<string, unknown>;
+
+        logger.info('Manifest has assertions', { reqId, hasTaUrl: !!obj.ta_url, taUrl: obj.ta_url });
+
+        // Ensure ta_url is set for timestamping when using user credentials
+        if (useUserCredentials && !obj.ta_url) {
+          // Use SSL.com's C2PA TSA by default
+          obj.ta_url = process.env.TSA_URL || 'https://api.c2patool.io/v1/timestamp';
+          logger.info('Added SSL.com TSA URL to manifest', { reqId, tsaUrl: obj.ta_url });
+        }
         obj.assertions = obj.assertions.map((a: unknown) => {
           if (!a || typeof a !== 'object') return a;
           const rec = a as Record<string, unknown>;
@@ -140,13 +161,24 @@ export async function POST(req: Request) {
           obj.sign_cert = certPath;
         }
 
-        writeFileSync(manifestPath, JSON.stringify(obj), 'utf8');
+        const manifestContent = JSON.stringify(obj, null, 2);
+        writeFileSync(manifestPath, manifestContent, 'utf8');
+        logger.info('Wrote manifest to file', {
+          reqId,
+          manifestPath,
+          manifestPreview: manifestContent.slice(0, 500)
+        });
       } else {
-        // If not an object, parse and add credentials
+        // If not an object with assertions, parse and add credentials
         let manifestObj = JSON.parse(manifestStr);
         if (useUserCredentials) {
           manifestObj.private_key = keyPath;
           manifestObj.sign_cert = certPath;
+          // Ensure SSL.com TSA URL is set
+          if (!manifestObj.ta_url) {
+            manifestObj.ta_url = process.env.TSA_URL || 'https://api.c2patool.io/v1/timestamp';
+            logger.info('Added SSL.com TSA URL to manifest (simple path)', { reqId, tsaUrl: manifestObj.ta_url });
+          }
         }
         writeFileSync(manifestPath, JSON.stringify(manifestObj), 'utf8');
       }
@@ -157,6 +189,11 @@ export async function POST(req: Request) {
         if (useUserCredentials) {
           manifestObj.private_key = keyPath;
           manifestObj.sign_cert = certPath;
+          // Ensure SSL.com TSA URL is set
+          if (!manifestObj.ta_url) {
+            manifestObj.ta_url = process.env.TSA_URL || 'https://api.c2patool.io/v1/timestamp';
+            logger.info('Added SSL.com TSA URL to manifest (fallback path)', { reqId, tsaUrl: manifestObj.ta_url });
+          }
         }
         writeFileSync(manifestPath, JSON.stringify(manifestObj), 'utf8');
       } catch {
@@ -182,7 +219,40 @@ export async function POST(req: Request) {
     if (trust && existsSync(trust)) {
       args.push('-f', 'trust', '--trust_anchors', trust);
     }
+
+    logger.info('Invoking c2patool', {
+      reqId,
+      command: c2paTool,
+      args,
+      cwd: tmp,
+      useUserCredentials
+    });
+
     const run = await spawnAsync(c2paTool, args, tmp);
+
+    logger.info('c2patool execution completed', {
+      reqId,
+      exitCode: run.code,
+      outputExists: existsSync(outPath),
+      stdout: run.stdout.slice(0, 500),
+      stderr: run.stderr.slice(0, 500)
+    });
+
+    // Check if SSL.com TSA failed with connection issues
+    if (run.code !== 0 && run.stderr?.includes('time stamp') && useUserCredentials) {
+      const manifestContent = readFileSync(manifestPath, 'utf8');
+      const manifest = JSON.parse(manifestContent);
+
+      if (manifest.ta_url?.includes('api.c2patool.io')) {
+        logger.error('SSL.com TSA connection failed', {
+          reqId,
+          tsaUrl: manifest.ta_url,
+          error: run.stderr,
+          note: 'SSL.com TSA may have connectivity issues. Please contact SSL.com support if this persists.'
+        });
+      }
+    }
+
     if (run.code !== 0 || !existsSync(outPath)) {
       logger.error('c2patool sign failed', { reqId, code: run.code, stderr: run.stderr });
       // Clean up temp dir
@@ -199,23 +269,62 @@ Alternatively, uncheck "Quick demo mode" to sign with your own certificate and k
 
 Current C2PATOOL_PATH: ${c2paTool}`;
       } else if (run.stderr?.includes('time stamp') || run.stderr?.includes('timestamp')) {
-        hint = `c2patool failed to generate timestamp. This is likely due to network issues or TSA endpoint configuration.
+        if (useUserCredentials) {
+          hint = `SSL.com TSA (https://api.c2patool.io/v1/timestamp) is currently unreachable.
+
+Possible solutions:
+1. Contact SSL.com team to investigate the TSA connectivity
+2. Verify the TSA endpoint is accessible from your network
+3. For testing purposes, you can temporarily modify the manifest's ta_url to use a different RFC 3161 compliant TSA
+
+The certificate issuance API is working correctly - only the timestamp service has connectivity issues.`;
+        } else {
+          hint = `c2patool failed to generate timestamp. This is likely due to network issues or TSA endpoint configuration.
 
 Quick fix: Uncheck "Quick demo mode" to sign with your own certificate and keys instead (the main workflow for this tool).
 
 If you need demo mode, ensure c2patool can reach the TSA endpoints listed in the footer.`;
+        }
       }
 
       return NextResponse.json({ error: 'Signing failed', reqId, detail: run.stderr?.slice(0, 2000), hint }, { status: 500 });
     }
 
-    const signed = readFileSync(outPath);
-    // Infer content-type from input name if possible
-    const ct = file.type || 'application/octet-stream';
-    const res = new NextResponse(signed, { status: 200, headers: { 'content-type': ct, 'content-disposition': `attachment; filename="signed-${file.name || 'asset'}"` } });
-    // Clean up (best-effort)
+    // Read the signed file as a Buffer (binary data)
+    const signedBuffer = readFileSync(outPath);
+    logger.info('Read signed file', { reqId, fileSize: signedBuffer.length });
+
+    // Clean up temp dir before returning
     try { rmSync(tmp, { recursive: true, force: true }); } catch {}
-    return res;
+
+    // Infer content-type from input name if possible - sanitize to ASCII only
+    const rawContentType = file.type || 'application/octet-stream';
+    const ct = rawContentType.replace(/[^\x00-\x7F]/g, '');
+
+    // Convert Buffer to Uint8Array to avoid any encoding issues
+    const uint8Array = new Uint8Array(signedBuffer);
+
+    // Sanitize filename to remove any non-ASCII characters
+    const safeName = (file.name || 'asset').replace(/[^\x00-\x7F]/g, '_');
+
+    logger.info('Returning signed file', {
+      reqId,
+      arrayLength: uint8Array.length,
+      contentType: ct,
+      rawContentType,
+      filename: safeName,
+      rawFilename: file.name
+    });
+
+    // Create response using standard Response API with Uint8Array
+    return new Response(uint8Array, {
+      status: 200,
+      headers: {
+        'Content-Type': ct,
+        'Content-Disposition': `attachment; filename="signed-${safeName}"`,
+        'Content-Length': uint8Array.length.toString()
+      }
+    });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     logger.error('sign route error', { reqId, error: msg });

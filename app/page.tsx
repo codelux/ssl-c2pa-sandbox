@@ -53,10 +53,10 @@ export default function Page() {
   const [verifyReport, setVerifyReport] = useState<string>('');
   const [showCurl, setShowCurl] = useState<boolean>(false);
   const [tsaAlgo, setTsaAlgo] = useState<'ecc' | 'rsa'>('ecc');
-  // CSR fields
-  const [subjectCN, setSubjectCN] = useState('');
-  const [subjectO, setSubjectO] = useState('');
-  const [subjectC, setSubjectC] = useState('');
+  // CSR fields - provide defaults for easier testing
+  const [subjectCN, setSubjectCN] = useState('C2PA Test User');
+  const [subjectO, setSubjectO] = useState('SSL.com');
+  const [subjectC, setSubjectC] = useState('US');
   // Profile IDs (RSA/ECC) provided by your VP Eng
   const PROFILES = useMemo(
     () => ([
@@ -70,9 +70,8 @@ export default function Page() {
   const defaultProductId = (process.env.NEXT_PUBLIC_CONFORMING_PRODUCT_ID as string) || (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : '');
   const [conformingProductId, setConformingProductId] = useState<string>(defaultProductId);
 
-  const [useServerSigner, setUseServerSigner] = useState<boolean>(true); // demo mode: server-side c2patool
   const haveKeys = !!keys.privateKey && !!keys.publicKey;
-  const canSign = useServerSigner ? !!imageFile : (haveKeys && !!certPem && !!imageFile && !!keys.pkcs8Pem);
+  const canSign = haveKeys && !!certPem && !!imageFile && !!keys.pkcs8Pem;
   const [preset, setPreset] = useState<'minimal' | 'editorial'>('minimal');
 
   const generateKeysAndCsr = useCallback(async () => {
@@ -148,17 +147,14 @@ export default function Page() {
       setStatus('Signing image…');
       toast.loading('Signing image...', { id: 'sign' });
 
-      // All signing now happens server-side using c2patool
+      // All signing now happens server-side using c2patool with user credentials
+      if (!keys.pkcs8Pem || !certPem) throw new Error('Missing certificate or private key');
+
       const form = new FormData();
       form.append('file', imageFile);
       form.append('manifest', JSON.stringify(res.data));
-
-      // Add user credentials if not in demo mode
-      if (!useServerSigner) {
-        if (!keys.pkcs8Pem || !certPem) throw new Error('Missing certificate or private key');
-        form.append('certPem', certPem);
-        form.append('privateKeyPem', keys.pkcs8Pem);
-      }
+      form.append('certPem', certPem);
+      form.append('privateKeyPem', keys.pkcs8Pem);
 
       const resp = await fetch('/api/sign', { method: 'POST', body: form });
       if (!resp.ok) {
@@ -184,24 +180,32 @@ export default function Page() {
       a.download = 'signed-' + (imageFile.name || 'image');
       a.click();
       URL.revokeObjectURL(url);
-      setVerifyReport(useServerSigner ? 'Signed (demo mode with default cert)' : 'Signed (with your SSL.com cert)');
+      setVerifyReport('Signed with your SSL.com certificate');
       setStatus('Image signed successfully');
       toast.success('Image signed and downloaded!', { id: 'sign' });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setStatus(`Error: ${msg}`);
-      // Show longer toast for errors with hints (demo mode errors)
-      const duration = msg.includes('Quick fix') || msg.includes('c2patool') ? 10000 : 6000;
+      const duration = msg.includes('SSL.com') ? 10000 : 6000;
       const displayMsg = msg.length > 300 ? msg.slice(0, 300) + '...' : msg;
       toast.error(`Signing failed:\n\n${displayMsg}`, { id: 'sign', duration, style: { maxWidth: '600px' } });
     }
-  }, [imageFile, keys.privateKey, keys.pkcs8Pem, certPem, manifestJson, useServerSigner]);
+  }, [imageFile, keys.pkcs8Pem, certPem, manifestJson]);
 
   const verifyOnly = useCallback(async () => {
     if (!imageFile) return;
-    setStatus('Verifying…');
-    const report = await verifyAsset(imageFile);
-    setVerifyReport(JSON.stringify(report, null, 2));
+    try {
+      setStatus('Verifying C2PA manifest…');
+      toast.loading('Verifying image...', { id: 'verify' });
+      const report = await verifyAsset(imageFile);
+      setVerifyReport(JSON.stringify(report, null, 2));
+      setStatus('Verification complete');
+      toast.success('Verification complete!', { id: 'verify' });
+    } catch (e: any) {
+      const msg = e?.message || String(e);
+      setStatus(`Verification error: ${msg}`);
+      toast.error(`Verification failed: ${msg}`, { id: 'verify' });
+    }
   }, [imageFile]);
 
   const imagePreviewUrl = useMemo(() => (imageFile ? URL.createObjectURL(imageFile) : ''), [imageFile]);
@@ -348,13 +352,21 @@ export default function Page() {
             />
             {manifestError && <p className="text-xs text-red-600 mt-1">{manifestError}</p>}
             <div className="mt-2 flex flex-wrap gap-2 items-center">
-              <button className="px-3 py-2 rounded bg-blue-600 text-white disabled:opacity-50" disabled={!canSign} onClick={signImage}>
-                Sign Image
+              <button
+                className="px-3 py-2 rounded bg-blue-600 text-white disabled:opacity-50 font-medium"
+                disabled={!canSign}
+                onClick={signImage}
+                title={canSign ? 'Ready to sign' : `Missing: ${!imageFile ? 'image ' : ''}${!haveKeys ? 'keys ' : ''}${!certPem ? 'certificate ' : ''}`}
+              >
+                {canSign ? 'Sign Image' : '🔒 Sign Image'}
               </button>
-              <label className="inline-flex items-center gap-2 text-xs text-gray-700">
-                <input type="checkbox" checked={useServerSigner} onChange={(e) => setUseServerSigner(e.target.checked)} />
-                Quick demo mode (no credentials needed)
-              </label>
+              {!canSign && (
+                <span className="text-xs text-red-600">
+                  {!imageFile && '⚠️ Upload an image first. '}
+                  {!haveKeys && '⚠️ Generate keys first. '}
+                  {!certPem && '⚠️ Request certificate first. '}
+                </span>
+              )}
               <button className="px-3 py-2 rounded border" onClick={() => setManifestJson(JSON.stringify(JSON.parse(manifestJson), null, 2))}>Format</button>
               <label className="text-xs text-gray-600">Preset</label>
               <select
@@ -379,8 +391,8 @@ export default function Page() {
                   try {
                     const parsed = JSON.parse(manifestJson);
                     parsed.ta_url = algo === 'rsa'
-                      ? 'https://api.staging.c2pa.ssl.com/v1/timestamp/rsa'
-                      : 'https://api.staging.c2pa.ssl.com/v1/timestamp';
+                      ? 'https://api.c2patool.io/v1/timestamp/rsa'
+                      : 'https://api.c2patool.io/v1/timestamp';
                     setManifestError('');
                     setManifestJson(JSON.stringify(parsed, null, 2));
                   } catch (err: any) {
@@ -421,10 +433,15 @@ export default function Page() {
       </Card>
 
       {/* Card C — Verify */}
-      <Card title="Verify">
+      <Card title="Verify C2PA Signature">
+        <p className="text-sm text-gray-600 mb-3">Upload a signed image to verify its C2PA manifest and certificate chain.</p>
         <div className="mt-3 flex gap-2 items-center">
-          <button className="px-3 py-2 rounded bg-blue-600 text-white" onClick={verifyOnly}>
-            Verify
+          <button
+            className="px-3 py-2 rounded bg-green-600 text-white font-medium disabled:opacity-50"
+            onClick={verifyOnly}
+            disabled={!imageFile}
+          >
+            Verify Image
           </button>
           {verifyReport && (() => {
             try {
@@ -445,8 +462,8 @@ export default function Page() {
 
       <footer className="text-xs text-gray-500 mt-8">
         <p>SSL.com C2PA Developer Tool • Test certificate issuance, signing, and verification APIs</p>
-        <p className="mt-2">TSA Endpoints: ECC — https://api.staging.c2pa.ssl.com/v1/timestamp • RSA — https://api.staging.c2pa.ssl.com/v1/timestamp/rsa</p>
-        <p>Trust Bundles: ECC — https://api.staging.c2pa.ssl.com/repository/C2PA-ECC-TRUST-BUNDLE.pem • RSA — https://api.staging.c2pa.ssl.com/repository/C2PA-RSA-TRUST-BUNDLE.pem</p>
+        <p className="mt-2">TSA Endpoints: ECC — https://api.c2patool.io/v1/timestamp • RSA — https://api.c2patool.io/v1/timestamp/rsa</p>
+        <p>Trust Bundles: ECC — https://api.c2patool.io/repository/C2PA-ECC-TRUST-BUNDLE.pem • RSA — https://api.c2patool.io/repository/C2PA-RSA-TRUST-BUNDLE.pem</p>
       </footer>
     </div>
   );

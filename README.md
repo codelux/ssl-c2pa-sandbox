@@ -87,10 +87,10 @@ Select your preferred profile from the dropdown in the UI.
 
 ## TSA Endpoints
 
-Timestamping is provided by SSL.com's staging TSA:
+Timestamping is provided by SSL.com's TSA:
 
-- **ECC (default)**: `https://api.staging.c2pa.ssl.com/v1/timestamp`
-- **RSA**: `https://api.staging.c2pa.ssl.com/v1/timestamp/rsa`
+- **ECC (default)**: `https://api.c2patool.io/v1/timestamp`
+- **RSA**: `https://api.c2patool.io/v1/timestamp/rsa`
 
 Use the TSA dropdown in the manifest editor to switch between ECC and RSA.
 
@@ -103,8 +103,8 @@ If you want to test signing without credentials, you can enable "Quick demo mode
 1. Download the c2patool binary for your platform
 2. Set `C2PATOOL_PATH` in `.env.local` (e.g., `C2PATOOL_PATH=./bin/c2patool`)
 3. Download the trust bundle:
-   - ECC: https://api.staging.c2pa.ssl.com/repository/C2PA-ECC-TRUST-BUNDLE.pem
-   - RSA: https://api.staging.c2pa.ssl.com/repository/C2PA-RSA-TRUST-BUNDLE.pem
+   - ECC: https://api.c2patool.io/repository/C2PA-ECC-TRUST-BUNDLE.pem
+   - RSA: https://api.c2patool.io/repository/C2PA-RSA-TRUST-BUNDLE.pem
 4. Set `TRUST_ANCHORS_PATH` to the downloaded bundle path
 
 Check the "Quick demo mode" checkbox to use this feature.
@@ -163,7 +163,7 @@ Visit [http://localhost:3000/docs](http://localhost:3000/docs) for detailed API 
 |----------|-------------|---------|
 | `AUTH_TOKEN` | Your SSL.com account Bearer token | Shared test token |
 | `API_BASE` | SSL.com C2PA API base URL | `https://api.c2patool.io` |
-| `TSA_URL` | Timestamp Authority URL | `https://api.staging.c2pa.ssl.com/v1/timestamp` |
+| `TSA_URL` | Timestamp Authority URL | `https://api.c2patool.io/v1/timestamp` |
 | `CERT_PROFILE_ID` | Default certificate profile (ECC or RSA) | ECC profile ID |
 | `CONFORMING_PRODUCT_ID` | Default conforming product UUID | Random UUID |
 | `C2PATOOL_PATH` | Path to c2patool binary (for demo mode) | Not set |
