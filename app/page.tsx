@@ -16,7 +16,7 @@ type KeyMaterial = {
   spkiPem?: string;
 };
 
-function toPem(type: 'PRIVATE KEY' | 'PUBLIC KEY', data: ArrayBuffer): string {
+function toPem(type: 'PRIVATE KEY' | 'PUBLIC KEY' | 'EC PRIVATE KEY', data: ArrayBuffer): string {
   const bytes = new Uint8Array(data);
   let bin = '';
   for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
@@ -25,10 +25,21 @@ function toPem(type: 'PRIVATE KEY' | 'PUBLIC KEY', data: ArrayBuffer): string {
   return `-----BEGIN ${type}-----\n${wrapped}\n-----END ${type}-----`;
 }
 
-async function exportKeys(kp: CryptoKeyPair): Promise<{ pkcs8Pem: string; spkiPem: string }> {
+async function exportKeys(kp: CryptoKeyPair): Promise<{ pkcs8Pem: string; ecPem: string; spkiPem: string }> {
+  // Export in PKCS#8 format (standard format)
   const pkcs8 = await crypto.subtle.exportKey('pkcs8', kp.privateKey);
+  const pkcs8Pem = toPem('PRIVATE KEY', pkcs8);
+
+  // Also export for EC-specific PEM (c2patool may prefer this)
+  // PKCS#8 is fine for most tools, but we'll label it correctly
+  const ecPem = toPem('PRIVATE KEY', pkcs8);
+
   const spki = await crypto.subtle.exportKey('spki', kp.publicKey);
-  return { pkcs8Pem: toPem('PRIVATE KEY', pkcs8), spkiPem: toPem('PUBLIC KEY', spki) };
+  return {
+    pkcs8Pem,
+    ecPem, // Same as pkcs8Pem but can be relabeled if needed
+    spkiPem: toPem('PUBLIC KEY', spki)
+  };
 }
 
 export default function Page() {

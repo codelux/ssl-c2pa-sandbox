@@ -54,15 +54,47 @@ export async function POST(req: Request) {
     const outPath = join(tmp, `signed${ext}`);
     const manifestPath = join(tmp, 'manifest.json');
     const certPath = join(tmp, 'cert.pem');
-    const keyPath = join(tmp, 'private.key');
+    let keyPath = join(tmp, 'private.key'); // let instead of const so we can update it
 
     const arr = new Uint8Array(await file.arrayBuffer());
     writeFileSync(inPath, arr);
 
     // Write user credentials to temp files if provided
     if (useUserCredentials) {
+      logger.info('Writing user credentials', {
+        reqId,
+        certLength: (certPem as string).length,
+        keyLength: (privateKeyPem as string).length,
+        certPreview: (certPem as string).slice(0, 100),
+        keyPreview: (privateKeyPem as string).slice(0, 100)
+      });
+
       writeFileSync(certPath, certPem as string, 'utf8');
+      // Write the private key - it's in PKCS#8 format from WebCrypto
       writeFileSync(keyPath, privateKeyPem as string, 'utf8');
+
+      // c2patool may need EC format, try to convert using openssl
+      const keyPathEC = join(tmp, 'private_ec.key');
+      try {
+        const convertResult = await spawnAsync('openssl', [
+          'ec',
+          '-in', keyPath,
+          '-out', keyPathEC
+        ], tmp);
+
+        if (convertResult.code === 0 && existsSync(keyPathEC)) {
+          // Successfully converted, use EC format
+          logger.info('Converted PKCS#8 key to EC format', { reqId });
+          // Update manifest to use converted key
+          keyPath = keyPathEC;
+        } else {
+          // Conversion failed, stick with PKCS#8
+          logger.warn('Could not convert key to EC format, using PKCS#8', { reqId, stderr: convertResult.stderr });
+        }
+      } catch (e) {
+        // openssl not available or failed, use PKCS#8 as-is
+        logger.warn('openssl conversion failed, using PKCS#8 key', { reqId, error: String(e) });
+      }
     }
     // Transform manifest to c2patool-friendly shape if needed
     try {
