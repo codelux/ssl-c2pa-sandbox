@@ -1,178 +1,452 @@
-# C2PA Developer Tool
+# SSL.com C2PA API Documentation
 
-A lightweight web interface for testing SSL.com's C2PA certificate issuance, signing, and verification API endpoints. Generate keys, request certificates, sign images with C2PA manifests, and verify provenance—all with pretty-printed output for easy debugging.
+Official documentation and examples for integrating SSL.com's C2PA (Coalition for Content Provenance and Authenticity) certificate issuance and timestamping APIs into your applications.
 
-## What This Tool Does
+## What is C2PA?
 
-This tool provides a simple UI for developers to:
+C2PA is an open technical standard that provides publishers, creators, and consumers the ability to trace the origin of different types of media. SSL.com provides C2PA certificate issuance and timestamping services that allow you to:
 
-1. **Generate EC keypairs** (P-256) and CSRs in the browser
-2. **Request C2PA certificates** from SSL.com's developer API
-3. **Edit C2PA manifest assertions** with JSON presets and live editing
-4. **Sign images** with certificates and embed timestamped manifests
-5. **Verify signed assets** and view pretty-printed assertion data
-6. **Download** private keys, certificates, CSRs, and signed assets
-7. **Copy cURL commands** for easy API integration into your own apps
+- **Issue C2PA certificates** for signing digital content
+- **Timestamp signatures** with RFC 3161 compliant timestamps
+- **Verify content provenance** with cryptographic proof
 
-## Quick Start
+## API Overview
 
-### 1. Install Dependencies
+SSL.com provides two primary API endpoints for C2PA:
 
-```bash
-npm install
+| Endpoint | Purpose | Documentation |
+|----------|---------|---------------|
+| Certificate Issuance | Request C2PA certificates using CSRs | [See below](#certificate-issuance-api) |
+| Timestamp Authority (TSA) | RFC 3161 timestamp service | [See below](#timestamp-authority-tsa) |
+
+**Base URL:** `https://api.c2patool.io`
+
+## Getting Started
+
+### 1. Get Your API Token
+
+Contact SSL.com to obtain your account Bearer token for API authentication.
+
+For testing, you can use our shared test token:
+```
+9b049052a999e98dd5c63b480c523c703a9df4d633910310f0b965bc278993ab
 ```
 
-### 2. Configure Environment (Optional)
+### 2. Generate a Key Pair and CSR
 
-Copy `.env.example` to `.env.local`:
+Generate an EC P-256 keypair and Certificate Signing Request (CSR) using OpenSSL or your preferred crypto library.
 
-```bash
-cp .env.example .env.local
-```
-
-The tool comes pre-configured with a shared test token for quick testing. To use your own credentials, update `AUTH_TOKEN` in `.env.local` with your account token from SSL.com.
-
-### 3. Run the Development Server
+**Using OpenSSL:**
 
 ```bash
-npm run dev
+# Generate EC P-256 private key
+openssl ecparam -name prime256v1 -genkey -noout -out private-key.pem
+
+# Generate CSR
+openssl req -new -key private-key.pem -out request.csr \
+  -subj "/C=US/O=Your Organization/CN=Your Name"
+
+# View CSR in PEM format
+cat request.csr
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+### 3. Request a C2PA Certificate
 
-## How to Use
+Send your CSR to the certificate issuance API to receive a C2PA certificate.
 
-### Basic Flow
+---
 
-1. **Generate Keys & CSR** - Click to create an EC P-256 keypair in your browser
-2. **Request Certificate** - Send the CSR to SSL.com's API and receive a C2PA certificate
-3. **Upload an Image** - Drag and drop a PNG or JPEG file
-4. **Edit Manifest** - Use presets or write custom JSON assertions
-5. **Sign Image** - Embed the manifest with your certificate and timestamp
-6. **Verify** - Check the signature and view pretty-printed claims
-7. **Download** - Save your private key, certificate, and signed image
+## Certificate Issuance API
 
-### API Integration
+### Endpoint
 
-The tool displays a ready-to-use cURL command that shows exactly how to call the certificate issuance API. Click "Show API cURL" to see the command with your current settings, then copy it for use in your own applications.
+```
+POST https://api.c2patool.io/api/v1/certificate-requests
+```
 
-**Example cURL:**
+### Headers
+
+```
+Content-Type: application/json
+Authorization: Bearer YOUR_API_TOKEN
+```
+
+**Note:** The `X-Account-ID` header is not required. Your account is inferred from the Bearer token.
+
+### Request Body
+
+```json
+{
+  "certificate_profile_id": "764b6cdd-1c1b-4a46-9967-22a112a0b390",
+  "certificate_signing_request": "-----BEGIN CERTIFICATE REQUEST-----\nMIHtMIGUAgEA...\n-----END CERTIFICATE REQUEST-----",
+  "conforming_product_id": "f5ac57ef-428e-4a82-8852-7bde10b33060",
+  "experimental": {
+    "CN": "Certificate Common Name",
+    "O": "Organization Name",
+    "C": "US"
+  }
+}
+```
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `certificate_profile_id` | string | Yes | Profile ID for certificate type (ECC or RSA) |
+| `certificate_signing_request` | string | Yes | PEM-encoded CSR with `\n` line breaks |
+| `conforming_product_id` | string | Yes | UUID identifying your application/product |
+| `experimental` | object | Yes | Subject information (CN, O, C fields) |
+| `experimental.CN` | string | No | Common Name for the certificate |
+| `experimental.O` | string | No | Organization name |
+| `experimental.C` | string | No | Two-letter country code (e.g., "US") |
+
+### Certificate Profiles
+
+Two profile IDs are available:
+
+- **ECC Profile** (recommended): `764b6cdd-1c1b-4a46-9967-22a112a0b390`
+- **RSA Profile**: `6ba3b70c-38fe-44c3-803f-910c5873d1d6`
+
+### Response
+
+**Success (200 OK):**
+
+```json
+{
+  "id": "accab0c0-8f73-49db-9873-9e435fcc6055",
+  "certificates": [
+    {
+      "id": "cert-id",
+      "serial": "DBE262D5DDE893B33FF3A738BC164410E24C",
+      "not_before": "2025-10-15T18:02:23Z",
+      "not_after": "2026-01-13T18:02:23Z",
+      "subject": "CN=Certificate Common Name,O=Organization,C=US",
+      "issuer": "CN=SSL.com C2PA Issuing CA,O=SSL Corp",
+      "pem": "-----BEGIN CERTIFICATE-----\nMIIDKjCCArCg...\n-----END CERTIFICATE-----",
+      "chain": [
+        "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+      ]
+    }
+  ]
+}
+```
+
+**Error (400 Bad Request):**
+
+```json
+{
+  "error": "Invalid CSR format",
+  "detail": "Certificate signing request must be PEM-encoded"
+}
+```
+
+**Error (401 Unauthorized):**
+
+```json
+{
+  "error": "Invalid or missing authorization token"
+}
+```
+
+### Example: cURL
 
 ```bash
 curl --location 'https://api.c2patool.io/api/v1/certificate-requests' \
 --header 'Content-Type: application/json' \
---header 'Authorization: Bearer 9b049052a999e98dd5c63b480c523c703a9df4d633910310f0b965bc278993ab' \
+--header 'Authorization: Bearer YOUR_API_TOKEN' \
 --data '{
     "certificate_profile_id": "764b6cdd-1c1b-4a46-9967-22a112a0b390",
-    "certificate_signing_request": "-----BEGIN CERTIFICATE REQUEST-----\n...\n-----END CERTIFICATE REQUEST-----",
+    "certificate_signing_request": "-----BEGIN CERTIFICATE REQUEST-----\nMIHtMIGUAgEAMDQxMjAJBgNVBAYTAlVTMA4GA1UECgwHU1NMLmNvbTAVBgNVBAMM\nDkMyUEEgVGVzdCBVc2VyMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEcB/PcyTB\npykpxu2yAxuOPI/V+BeZLqdganyd2iyX83LoNOIlG1IO97GBDJ73rdgggpIFLqPT\nWsLCToUcNc9JyDAKBggqhkjOPQQDAgNIADBFAiEAmpyFgAEv9WwGIg49UCiToVSA\nilyegH2Ss5piOTrwNocCIGy5HpkP6DOX9mh8t5+KShGJ+HDbDLMDqILf1/ubrHoR\n-----END CERTIFICATE REQUEST-----",
     "conforming_product_id": "f5ac57ef-428e-4a82-8852-7bde10b33060",
     "experimental": {
-        "CN": "Demo Certificate CN",
-        "O": "SSL.com Corporation",
+        "CN": "My Application",
+        "O": "My Company",
         "C": "US"
     }
 }'
 ```
 
-**Note:** The `X-Account-ID` header is not required—your account is inferred from the Bearer token.
+### Example: JavaScript (Node.js)
 
-## Certificate Profiles
+```javascript
+const https = require('https');
 
-Two profile IDs are available:
+const requestBody = {
+  certificate_profile_id: '764b6cdd-1c1b-4a46-9967-22a112a0b390',
+  certificate_signing_request: '-----BEGIN CERTIFICATE REQUEST-----\n...\n-----END CERTIFICATE REQUEST-----',
+  conforming_product_id: 'f5ac57ef-428e-4a82-8852-7bde10b33060',
+  experimental: {
+    CN: 'My Application',
+    O: 'My Company',
+    C: 'US'
+  }
+};
 
-- **ECC Profile** (default): `764b6cdd-1c1b-4a46-9967-22a112a0b390`
-- **RSA Profile**: `6ba3b70c-38fe-44c3-803f-910c5873d1d6`
+const options = {
+  hostname: 'api.c2patool.io',
+  port: 443,
+  path: '/api/v1/certificate-requests',
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer YOUR_API_TOKEN'
+  }
+};
 
-Select your preferred profile from the dropdown in the UI.
+const req = https.request(options, (res) => {
+  let data = '';
+  res.on('data', (chunk) => data += chunk);
+  res.on('end', () => {
+    const response = JSON.parse(data);
+    console.log('Certificate PEM:', response.certificates[0].pem);
+  });
+});
 
-## TSA Endpoints
+req.write(JSON.stringify(requestBody));
+req.end();
+```
 
-Timestamping is provided by SSL.com's TSA:
+### Example: Python
 
-- **ECC (default)**: `https://api.c2patool.io/v1/timestamp`
-- **RSA**: `https://api.c2patool.io/v1/timestamp/rsa`
+```python
+import requests
+import json
 
-Use the TSA dropdown in the manifest editor to switch between ECC and RSA.
+url = 'https://api.c2patool.io/api/v1/certificate-requests'
+headers = {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer YOUR_API_TOKEN'
+}
 
-## Optional: Quick Demo Mode
+payload = {
+    'certificate_profile_id': '764b6cdd-1c1b-4a46-9967-22a112a0b390',
+    'certificate_signing_request': '-----BEGIN CERTIFICATE REQUEST-----\n...\n-----END CERTIFICATE REQUEST-----',
+    'conforming_product_id': 'f5ac57ef-428e-4a82-8852-7bde10b33060',
+    'experimental': {
+        'CN': 'My Application',
+        'O': 'My Company',
+        'C': 'US'
+    }
+}
 
-If you want to test signing without credentials, you can enable "Quick demo mode" which uses the c2patool CLI binary for signing.
+response = requests.post(url, headers=headers, json=payload)
+if response.status_code == 200:
+    cert_pem = response.json()['certificates'][0]['pem']
+    print(f'Certificate PEM:\n{cert_pem}')
+else:
+    print(f'Error: {response.status_code} - {response.text}')
+```
 
-### Setup for Demo Mode:
+---
 
-1. Download the c2patool binary for your platform
-2. Set `C2PATOOL_PATH` in `.env.local` (e.g., `C2PATOOL_PATH=./bin/c2patool`)
-3. Download the trust bundle:
-   - ECC: https://api.c2patool.io/repository/C2PA-ECC-TRUST-BUNDLE.pem
-   - RSA: https://api.c2patool.io/repository/C2PA-RSA-TRUST-BUNDLE.pem
-4. Set `TRUST_ANCHORS_PATH` to the downloaded bundle path
+## Timestamp Authority (TSA)
 
-Check the "Quick demo mode" checkbox to use this feature.
+SSL.com provides RFC 3161 compliant timestamp services for C2PA signatures.
 
-## Development
+### Endpoints
 
-### Lint & Type Check
+**Primary (ECC):**
+```
+https://api.staging.c2pa.ssl.com/v1/timestamp
+```
+
+**Fallback (ECC):**
+```
+https://api.c2patool.io/v1/timestamp
+```
+
+**RSA Endpoint:**
+```
+https://api.c2patool.io/v1/timestamp/rsa
+```
+
+### Protocol
+
+The TSA endpoints accept RFC 3161 Timestamp Requests and return RFC 3161 Timestamp Responses.
+
+**Request:**
+- Method: `POST`
+- Content-Type: `application/timestamp-query`
+- Body: DER-encoded TimeStampReq (RFC 3161)
+
+**Response:**
+- Content-Type: `application/timestamp-reply`
+- Body: DER-encoded TimeStampResp (RFC 3161)
+
+### Integration with c2patool
+
+If you're using the [c2patool](https://github.com/contentauth/c2patool) command-line tool, specify the TSA URL in your manifest:
+
+```json
+{
+  "title": "My Signed Image",
+  "format": "image/jpeg",
+  "ta_url": "https://api.staging.c2pa.ssl.com/v1/timestamp",
+  "assertions": [
+    {
+      "label": "c2pa.actions",
+      "data": {
+        "actions": [
+          { "action": "c2pa.created" }
+        ]
+      }
+    }
+  ]
+}
+```
+
+Then sign your content:
 
 ```bash
-npm run lint
-npm run typecheck
+c2patool image.jpg -m manifest.json -o signed-image.jpg \
+  --private-key private-key.pem \
+  --cert certificate.pem
 ```
 
-### Build for Production
+### Trust Bundles
+
+Download trust anchors for validating C2PA signatures:
+
+- **ECC Trust Bundle:** https://api.c2patool.io/repository/C2PA-ECC-TRUST-BUNDLE.pem
+- **RSA Trust Bundle:** https://api.c2patool.io/repository/C2PA-RSA-TRUST-BUNDLE.pem
+
+---
+
+## Complete Workflow Example
+
+Here's a complete end-to-end example of issuing a certificate and signing content:
+
+### Step 1: Generate Key Pair
 
 ```bash
-npm run build
-npm start
+openssl ecparam -name prime256v1 -genkey -noout -out private-key.pem
 ```
 
-### Quality Assurance
+### Step 2: Create CSR
 
 ```bash
-npm run qa  # Runs lint + typecheck + build
+openssl req -new -key private-key.pem -out request.csr \
+  -subj "/C=US/O=My Company/CN=My Application"
 ```
 
-## API Documentation
+### Step 3: Get CSR in PEM Format
 
-Visit [http://localhost:3000/docs](http://localhost:3000/docs) for detailed API endpoint documentation.
-
-## Project Structure
-
-```
-├── app/
-│   ├── api/
-│   │   ├── cert-requests/  # Proxies to SSL.com certificate issuance API
-│   │   ├── sign/           # Optional demo signing with c2patool
-│   │   └── tsa/            # TSA timestamp proxy
-│   ├── docs/               # API documentation page
-│   └── page.tsx            # Main UI
-├── components/             # Reusable React components
-├── lib/                    # Utilities (CSR generation, manifest schemas, etc.)
-└── public/                 # Static assets
+```bash
+CSR_PEM=$(cat request.csr | sed ':a;N;$!ba;s/\n/\\n/g')
+echo $CSR_PEM
 ```
 
-## Security Notes
+### Step 4: Request Certificate
 
-- Private keys are generated client-side and never leave your browser
-- Keys are stored in memory only (not persisted)
-- The shared test token is for demonstration purposes only
-- For production use, obtain your own account token from SSL.com
+```bash
+curl --location 'https://api.c2patool.io/api/v1/certificate-requests' \
+--header 'Content-Type: application/json' \
+--header 'Authorization: Bearer YOUR_API_TOKEN' \
+--data "{
+    \"certificate_profile_id\": \"764b6cdd-1c1b-4a46-9967-22a112a0b390\",
+    \"certificate_signing_request\": \"$CSR_PEM\",
+    \"conforming_product_id\": \"$(uuidgen)\",
+    \"experimental\": {
+        \"CN\": \"My Application\",
+        \"O\": \"My Company\",
+        \"C\": \"US\"
+    }
+}" | jq -r '.certificates[0].pem' > certificate.pem
+```
 
-## Environment Variables
+### Step 5: Create Manifest
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `AUTH_TOKEN` | Your SSL.com account Bearer token | Shared test token |
-| `API_BASE` | SSL.com C2PA API base URL | `https://api.c2patool.io` |
-| `TSA_URL` | Timestamp Authority URL | `https://api.c2patool.io/v1/timestamp` |
-| `CERT_PROFILE_ID` | Default certificate profile (ECC or RSA) | ECC profile ID |
-| `CONFORMING_PRODUCT_ID` | Default conforming product UUID | Random UUID |
-| `C2PATOOL_PATH` | Path to c2patool binary (for demo mode) | Not set |
-| `TRUST_ANCHORS_PATH` | Path to trust bundle PEM (for demo mode) | Not set |
+```bash
+cat > manifest.json <<EOF
+{
+  "title": "Signed Image",
+  "format": "image/jpeg",
+  "ta_url": "https://api.staging.c2pa.ssl.com/v1/timestamp",
+  "assertions": [
+    {
+      "label": "c2pa.actions",
+      "data": {
+        "actions": [{ "action": "c2pa.created" }]
+      }
+    }
+  ]
+}
+EOF
+```
+
+### Step 6: Sign Content
+
+```bash
+c2patool image.jpg \
+  -m manifest.json \
+  -o signed-image.jpg \
+  --private-key private-key.pem \
+  --cert certificate.pem
+```
+
+### Step 7: Verify Signature
+
+```bash
+c2patool signed-image.jpg --info
+```
+
+---
+
+## Rate Limits
+
+- **Certificate Issuance:** ~30 requests per minute per IP
+- **TSA:** No specific rate limit (standard RFC 3161 usage)
+
+Contact SSL.com support if you need higher rate limits for production use.
+
+## Error Codes
+
+| Status Code | Meaning | Solution |
+|-------------|---------|----------|
+| 400 | Bad Request | Check request format and required fields |
+| 401 | Unauthorized | Verify your Bearer token is correct |
+| 422 | Unprocessable Entity | Check CSR format and experimental fields |
+| 429 | Too Many Requests | Wait before retrying, respect rate limits |
+| 500 | Internal Server Error | Contact SSL.com support |
+
+## Security Best Practices
+
+1. **Never commit API tokens** to version control
+2. **Store private keys securely** - never share or expose them
+3. **Use environment variables** for sensitive configuration
+4. **Rotate API tokens** periodically
+5. **Validate certificates** before using them in production
+6. **Use HTTPS** for all API communications
+
+## Testing Tool
+
+This repository includes a web-based testing tool for experimenting with the APIs:
+
+```bash
+npm install
+npm run dev
+```
+
+Visit `http://localhost:3000` to:
+- Generate test CSRs
+- Request certificates interactively
+- View example cURL commands
+- Test signing and verification
 
 ## Support
 
-For questions or issues with SSL.com's C2PA APIs, contact SSL.com support or visit the documentation at https://www.ssl.com/c2pa/
+For questions or issues with SSL.com's C2PA APIs:
+
+- **Email:** support@ssl.com
+- **Website:** https://www.ssl.com/c2pa/
+- **Issues:** https://github.com/JeremiahDoyle/ssl-c2pa-sandbox/issues
+
+## Additional Resources
+
+- **C2PA Specification:** https://c2pa.org/specifications/
+- **c2patool:** https://github.com/contentauth/c2patool
+- **Content Authenticity Initiative:** https://contentauthenticity.org/
 
 ## License
 
-Private project for SSL.com
+Documentation and examples are provided for integration with SSL.com's C2PA services.
