@@ -245,19 +245,14 @@ SSL.com provides RFC 3161 compliant timestamp services for C2PA signatures.
 
 ### Endpoints
 
-**Primary (ECC):**
+**ECC (Elliptic Curve):**
 ```
-https://api.staging.c2pa.ssl.com/v1/timestamp
-```
-
-**Fallback (ECC):**
-```
-https://api.c2patool.io/v1/timestamp
+https://api.c2patool.io/api/v1/timestamps/ecc
 ```
 
-**RSA Endpoint:**
+**RSA:**
 ```
-https://api.c2patool.io/v1/timestamp/rsa
+https://api.c2patool.io/api/v1/timestamps/rsa
 ```
 
 ### Protocol
@@ -281,7 +276,7 @@ If you're using the [c2patool](https://github.com/contentauth/c2patool) command-
 {
   "title": "My Signed Image",
   "format": "image/jpeg",
-  "ta_url": "https://api.staging.c2pa.ssl.com/v1/timestamp",
+  "ta_url": "https://api.c2patool.io/api/v1/timestamps/ecc",
   "assertions": [
     {
       "label": "c2pa.actions",
@@ -361,7 +356,7 @@ cat > manifest.json <<EOF
 {
   "title": "Signed Image",
   "format": "image/jpeg",
-  "ta_url": "https://api.staging.c2pa.ssl.com/v1/timestamp",
+  "ta_url": "https://api.c2patool.io/api/v1/timestamps/ecc",
   "assertions": [
     {
       "label": "c2pa.actions",

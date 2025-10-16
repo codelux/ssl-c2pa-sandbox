@@ -52,6 +52,7 @@ export default function Page() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [verifyReport, setVerifyReport] = useState<string>('');
   const [showCurl, setShowCurl] = useState<boolean>(false);
+  const [showRawJson, setShowRawJson] = useState<boolean>(false);
   const [tsaAlgo, setTsaAlgo] = useState<'ecc' | 'rsa'>('ecc');
   // CSR fields - provide defaults for easier testing
   const [subjectCN, setSubjectCN] = useState('C2PA Test User');
@@ -157,6 +158,7 @@ export default function Page() {
       form.append('privateKeyPem', keys.pkcs8Pem);
 
       const resp = await fetch('/api/sign', { method: 'POST', body: form });
+
       if (!resp.ok) {
         let msg = 'Signing failed';
         let hint = '';
@@ -195,16 +197,45 @@ export default function Page() {
   const verifyOnly = useCallback(async () => {
     if (!imageFile) return;
     try {
+      console.log('[Manifest Inspector] Starting inspection', {
+        fileName: imageFile.name,
+        fileSize: imageFile.size,
+        fileType: imageFile.type,
+        timestamp: new Date().toISOString()
+      });
+
       setStatus('Verifying C2PA manifest…');
-      toast.loading('Verifying image...', { id: 'verify' });
+      toast.loading('Inspecting manifest...', { id: 'verify' });
+
+      console.log('[Manifest Inspector] Calling verifyAsset...');
       const report = await verifyAsset(imageFile);
+
+      console.log('[Manifest Inspector] verifyAsset completed', {
+        reportType: typeof report,
+        reportKeys: report && typeof report === 'object' ? Object.keys(report) : [],
+        reportPreview: JSON.stringify(report).slice(0, 500)
+      });
+
       setVerifyReport(JSON.stringify(report, null, 2));
-      setStatus('Verification complete');
-      toast.success('Verification complete!', { id: 'verify' });
+      setStatus('Inspection complete');
+      toast.success('Manifest inspection complete!', { id: 'verify' });
+
+      console.log('[Manifest Inspector] Success - report set');
     } catch (e: any) {
       const msg = e?.message || String(e);
+      const stack = e?.stack || 'No stack trace';
+
+      console.error('[Manifest Inspector] ERROR', {
+        message: msg,
+        errorType: typeof e,
+        errorConstructor: e?.constructor?.name,
+        errorKeys: e && typeof e === 'object' ? Object.keys(e) : [],
+        stack: stack,
+        fullError: e
+      });
+
       setStatus(`Verification error: ${msg}`);
-      toast.error(`Verification failed: ${msg}`, { id: 'verify' });
+      toast.error(`Inspection failed: ${msg}`, { id: 'verify', duration: 8000 });
     }
   }, [imageFile]);
 
@@ -391,8 +422,8 @@ export default function Page() {
                   try {
                     const parsed = JSON.parse(manifestJson);
                     parsed.ta_url = algo === 'rsa'
-                      ? 'https://api.c2patool.io/v1/timestamp/rsa'
-                      : 'https://api.c2patool.io/v1/timestamp';
+                      ? 'https://api.c2patool.io/api/v1/timestamps/rsa'
+                      : 'https://api.c2patool.io/api/v1/timestamps/ecc';
                     setManifestError('');
                     setManifestJson(JSON.stringify(parsed, null, 2));
                   } catch (err: any) {
@@ -432,38 +463,205 @@ export default function Page() {
         </div>
       </Card>
 
-      {/* Card C — Verify */}
-      <Card title="Verify C2PA Signature">
-        <p className="text-sm text-gray-600 mb-3">Upload a signed image to verify its C2PA manifest and certificate chain.</p>
+      {/* Card C — Manifest Inspector */}
+      <Card title="C2PA Manifest Inspector">
+        {/* Disclaimer Banner */}
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="text-sm text-amber-900">
+            <strong>⚠️ Developer Tool</strong> — This inspector uses the official C2PA library to read manifest data, but this is not a certified C2PA validator product.
+            For production validation, use <a href="https://contentcredentials.org/verify" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">Content Credentials Verify</a> or other certified tools.
+          </p>
+        </div>
+
+        <p className="text-sm text-gray-600 mb-3">Upload a C2PA-signed image to inspect its manifest, assertions, and provenance chain. Great for testing how tampering or modifications affect the signature.</p>
+
         <div className="mt-3 flex gap-2 items-center">
           <button
             className="px-3 py-2 rounded bg-green-600 text-white font-medium disabled:opacity-50"
             onClick={verifyOnly}
             disabled={!imageFile}
           >
-            Verify Image
+            Inspect Manifest
           </button>
           {verifyReport && (() => {
             try {
               const r = JSON.parse(verifyReport);
-              const status = (r.status || '').toLowerCase();
+
+              // Determine status from validationResults
+              const validationResults = r.validationResults?.activeManifest;
+              const hasFailures = validationResults?.failure && validationResults.failure.length > 0;
+              const hasInformational = validationResults?.informational && validationResults.informational.length > 0;
+              const hasSuccess = validationResults?.success && validationResults.success.length > 0;
+
+              let status = 'unknown';
+              if (hasFailures) {
+                status = 'error';
+              } else if (hasInformational) {
+                status = 'warn';
+              } else if (hasSuccess) {
+                status = 'ok';
+              }
+
+              // Fallback to legacy status field
+              if (status === 'unknown' && r.status) {
+                status = (r.status || '').toLowerCase();
+              }
+
               const cls = status === 'ok' ? 'bg-green-100 text-green-800 border-green-200' : status === 'warn' ? 'bg-amber-100 text-amber-800 border-amber-200' : 'bg-red-100 text-red-800 border-red-200';
-              const label = status === 'ok' ? 'Pass' : status === 'warn' ? 'Warnings' : 'Fail';
+              const label = status === 'ok' ? '✓ Valid' : status === 'warn' ? '⚠ Warnings' : status === 'error' ? '✗ Invalid' : 'ℹ Status';
               return <span className={`inline-flex items-center text-xs font-medium rounded px-2 py-1 border ${cls}`}>{label}</span>;
             } catch {
               return null;
             }
           })()}
         </div>
-        {verifyReport && (
-          <pre className="mt-3 whitespace-pre-wrap text-sm bg-gray-50 border rounded p-3">{verifyReport}</pre>
-        )}
+
+        {verifyReport && (() => {
+          try {
+            const data = JSON.parse(verifyReport);
+            // Handle both camelCase (new c2pa lib) and snake_case (legacy)
+            const manifest = data.activeManifest || data.manifests?.[data.active_manifest];
+
+            return (
+              <div className="mt-4 space-y-4">
+                {/* Pretty UI Section */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Left Column - Basic Info */}
+                  <div className="space-y-3">
+                    <div className="p-3 bg-gray-50 border rounded">
+                      <h3 className="text-sm font-semibold text-gray-700 mb-2">Manifest Details</h3>
+                      <div className="space-y-1 text-xs">
+                        <div><span className="text-gray-600">Title:</span> <span className="font-mono">{manifest?.title || 'N/A'}</span></div>
+                        <div><span className="text-gray-600">Format:</span> <span className="font-mono">{manifest?.format || 'N/A'}</span></div>
+                        <div><span className="text-gray-600">Instance ID:</span> <span className="font-mono text-[10px]">{manifest?.instanceId || manifest?.instance_id || 'N/A'}</span></div>
+                        <div><span className="text-gray-600">Claim Generator:</span> <span className="font-mono text-[10px]">{manifest?.claimGenerator || manifest?.claim_generator || 'N/A'}</span></div>
+                      </div>
+                    </div>
+
+                    {(manifest?.signatureInfo || manifest?.signature_info) && (
+                      <div className="p-3 bg-gray-50 border rounded">
+                        <h3 className="text-sm font-semibold text-gray-700 mb-2">Signature Info</h3>
+                        <div className="space-y-1 text-xs">
+                          <div><span className="text-gray-600">Algorithm:</span> <span className="font-mono">{(manifest.signatureInfo || manifest.signature_info)?.alg || 'N/A'}</span></div>
+                          <div><span className="text-gray-600">Issuer:</span> <span className="font-mono text-[10px]">{(manifest.signatureInfo || manifest.signature_info)?.issuer || 'N/A'}</span></div>
+                          <div><span className="text-gray-600">Common Name:</span> <span className="font-mono text-[10px]">{(manifest.signatureInfo || manifest.signature_info)?.common_name || 'N/A'}</span></div>
+                          {((manifest.signatureInfo || manifest.signature_info)?.time) && (
+                            <div><span className="text-gray-600">Signed:</span> <span className="font-mono text-[10px]">{(manifest.signatureInfo || manifest.signature_info).time}</span></div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right Column - Assertions */}
+                  <div className="space-y-3">
+                    {(manifest?.assertions?.data || manifest?.assertions) && (() => {
+                      const assertions = manifest?.assertions?.data || manifest?.assertions;
+                      const assertionList = Array.isArray(assertions) ? assertions : [];
+                      return assertionList.length > 0 ? (
+                        <div className="p-3 bg-gray-50 border rounded">
+                          <h3 className="text-sm font-semibold text-gray-700 mb-2">Assertions ({assertionList.length})</h3>
+                          <ul className="space-y-1 text-xs">
+                            {assertionList.map((assertion: any, idx: number) => (
+                              <li key={idx} className="font-mono text-[11px]">
+                                • {assertion.label || 'unknown'}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null;
+                    })()}
+
+                    {(() => {
+                      const validationResults = data.validationResults?.activeManifest;
+                      const validationStatus = data.validation_status || data.validationStatus;
+
+                      // Show validation results if available (new format)
+                      if (validationResults) {
+                        const allResults = [
+                          ...(validationResults.success || []).map((r: any) => ({ ...r, type: 'success' })),
+                          ...(validationResults.informational || []).map((r: any) => ({ ...r, type: 'info' })),
+                          ...(validationResults.failure || []).map((r: any) => ({ ...r, type: 'error' }))
+                        ];
+
+                        return allResults.length > 0 ? (
+                          <div className="p-3 bg-gray-50 border rounded max-h-64 overflow-y-auto">
+                            <h3 className="text-sm font-semibold text-gray-700 mb-2">Validation Results</h3>
+                            <ul className="space-y-1 text-xs">
+                              {allResults.map((item: any, idx: number) => {
+                                const icon = item.type === 'success' ? '✓' : item.type === 'info' ? 'ℹ' : '✗';
+                                const color = item.type === 'success' ? 'text-green-700' : item.type === 'info' ? 'text-amber-700' : 'text-red-600';
+                                return (
+                                  <li key={idx} className={`font-mono text-[11px] ${color}`}>
+                                    {icon} {item.code || item.message || JSON.stringify(item)}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
+                        ) : null;
+                      }
+
+                      // Fall back to validation_status (legacy format)
+                      if (validationStatus && validationStatus.length > 0) {
+                        return (
+                          <div className="p-3 bg-gray-50 border rounded">
+                            <h3 className="text-sm font-semibold text-gray-700 mb-2">Validation Status</h3>
+                            <ul className="space-y-1 text-xs">
+                              {validationStatus.map((item: any, idx: number) => {
+                                const isError = item.code?.toLowerCase().includes('error') || item.code?.toLowerCase().includes('fail');
+                                return (
+                                  <li key={idx} className={`font-mono text-[11px] ${isError ? 'text-red-600' : 'text-gray-700'}`}>
+                                    {isError ? '✗' : '•'} {item.code || item.message || JSON.stringify(item)}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
+                        );
+                      }
+
+                      return null;
+                    })()}
+                  </div>
+                </div>
+
+                {/* Collapsible Raw JSON */}
+                <div className="border-t pt-3">
+                  <button
+                    onClick={() => setShowRawJson(!showRawJson)}
+                    className="text-sm text-gray-600 hover:text-gray-900 underline"
+                  >
+                    {showRawJson ? '▼ Hide Raw JSON' : '▶ Show Raw JSON'}
+                  </button>
+                  {showRawJson && (
+                    <pre className="mt-2 whitespace-pre-wrap text-[11px] bg-gray-50 border rounded p-3 max-h-96 overflow-y-auto font-mono">
+                      {verifyReport}
+                    </pre>
+                  )}
+                </div>
+              </div>
+            );
+          } catch {
+            return (
+              <pre className="mt-3 whitespace-pre-wrap text-sm bg-gray-50 border rounded p-3">{verifyReport}</pre>
+            );
+          }
+        })()}
       </Card>
 
       <footer className="text-xs text-gray-500 mt-8">
         <p>SSL.com C2PA Developer Tool • Test certificate issuance, signing, and verification APIs</p>
-        <p className="mt-2">TSA Endpoints: ECC — https://api.c2patool.io/v1/timestamp • RSA — https://api.c2patool.io/v1/timestamp/rsa</p>
-        <p>Trust Bundles: ECC — https://api.c2patool.io/repository/C2PA-ECC-TRUST-BUNDLE.pem • RSA — https://api.c2patool.io/repository/C2PA-RSA-TRUST-BUNDLE.pem</p>
+        <p className="mt-2">
+          <strong>TSA Endpoints (C2PA Compliant):</strong><br />
+          ECC (default): <code className="bg-gray-100 px-1 rounded">https://api.c2patool.io/api/v1/timestamps/ecc</code><br />
+          RSA: <code className="bg-gray-100 px-1 rounded">https://api.c2patool.io/api/v1/timestamps/rsa</code>
+        </p>
+        <p className="mt-2">
+          <strong>Trust Bundles:</strong><br />
+          ECC: <code className="bg-gray-100 px-1 rounded">https://api.c2patool.io/repository/C2PA-ECC-TRUST-BUNDLE.pem</code><br />
+          RSA: <code className="bg-gray-100 px-1 rounded">https://api.c2patool.io/repository/C2PA-RSA-TRUST-BUNDLE.pem</code>
+        </p>
       </footer>
     </div>
   );

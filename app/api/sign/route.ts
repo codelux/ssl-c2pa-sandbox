@@ -122,9 +122,9 @@ export async function POST(req: Request) {
 
         // Ensure ta_url is set for timestamping when using user credentials
         if (useUserCredentials && !obj.ta_url) {
-          // Try staging TSA first (known working SSL/TLS), fallback to new domain
-          obj.ta_url = process.env.TSA_URL || 'https://api.staging.c2pa.ssl.com/v1/timestamp';
-          logger.info('Added SSL.com TSA URL to manifest (trying staging first)', { reqId, tsaUrl: obj.ta_url, fallback: 'https://api.c2patool.io/v1/timestamp' });
+          // Use ECC TSA by default (preferred algorithm)
+          obj.ta_url = process.env.TSA_URL || 'https://api.c2patool.io/api/v1/timestamps/ecc';
+          logger.info('Added SSL.com TSA URL to manifest', { reqId, tsaUrl: obj.ta_url });
         }
         obj.assertions = obj.assertions.map((a: unknown) => {
           if (!a || typeof a !== 'object') return a;
@@ -170,14 +170,14 @@ export async function POST(req: Request) {
         });
       } else {
         // If not an object with assertions, parse and add credentials
-        let manifestObj = JSON.parse(manifestStr);
+        const manifestObj = JSON.parse(manifestStr);
         if (useUserCredentials) {
           manifestObj.private_key = keyPath;
           manifestObj.sign_cert = certPath;
           // Ensure SSL.com TSA URL is set
           if (!manifestObj.ta_url) {
-            manifestObj.ta_url = process.env.TSA_URL || 'https://api.staging.c2pa.ssl.com/v1/timestamp';
-            logger.info('Added SSL.com TSA URL to manifest (simple path, trying staging first)', { reqId, tsaUrl: manifestObj.ta_url, fallback: 'https://api.c2patool.io/v1/timestamp' });
+            manifestObj.ta_url = process.env.TSA_URL || 'https://api.c2patool.io/api/v1/timestamps/ecc';
+            logger.info('Added SSL.com TSA URL to manifest (simple path)', { reqId, tsaUrl: manifestObj.ta_url });
           }
         }
         writeFileSync(manifestPath, JSON.stringify(manifestObj), 'utf8');
@@ -185,14 +185,14 @@ export async function POST(req: Request) {
     } catch {
       // If parsing fails, try to add credentials anyway
       try {
-        let manifestObj = JSON.parse(manifestStr);
+        const manifestObj = JSON.parse(manifestStr);
         if (useUserCredentials) {
           manifestObj.private_key = keyPath;
           manifestObj.sign_cert = certPath;
           // Ensure SSL.com TSA URL is set
           if (!manifestObj.ta_url) {
-            manifestObj.ta_url = process.env.TSA_URL || 'https://api.staging.c2pa.ssl.com/v1/timestamp';
-            logger.info('Added SSL.com TSA URL to manifest (fallback path, trying staging first)', { reqId, tsaUrl: manifestObj.ta_url, fallback: 'https://api.c2patool.io/v1/timestamp' });
+            manifestObj.ta_url = process.env.TSA_URL || 'https://api.c2patool.io/api/v1/timestamps/ecc';
+            logger.info('Added SSL.com TSA URL to manifest (fallback path)', { reqId, tsaUrl: manifestObj.ta_url });
           }
         }
         writeFileSync(manifestPath, JSON.stringify(manifestObj), 'utf8');
@@ -238,58 +238,8 @@ export async function POST(req: Request) {
       stderr: run.stderr.slice(0, 500)
     });
 
-    // Check if SSL.com TSA failed with connection issues - try fallback
-    if (run.code !== 0 && run.stderr?.includes('time stamp') && useUserCredentials) {
-      const manifestContent = readFileSync(manifestPath, 'utf8');
-      const manifest = JSON.parse(manifestContent);
-
-      // If staging TSA failed, try the new domain as fallback
-      if (manifest.ta_url?.includes('api.staging.c2pa.ssl.com')) {
-        logger.warn('Staging TSA failed, trying fallback to api.c2patool.io', {
-          reqId,
-          firstTsaUrl: manifest.ta_url,
-          fallbackUrl: 'https://api.c2patool.io/v1/timestamp',
-          error: run.stderr.slice(0, 200)
-        });
-
-        // Update manifest with fallback TSA URL
-        manifest.ta_url = 'https://api.c2patool.io/v1/timestamp';
-        writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
-
-        // Retry signing with fallback TSA
-        logger.info('Retrying c2patool with fallback TSA', { reqId, tsaUrl: manifest.ta_url });
-        const retryRun = await spawnAsync(c2paTool, args, tmp);
-
-        logger.info('c2patool retry completed', {
-          reqId,
-          exitCode: retryRun.code,
-          outputExists: existsSync(outPath),
-          stdout: retryRun.stdout.slice(0, 500),
-          stderr: retryRun.stderr.slice(0, 500)
-        });
-
-        // If retry succeeded, update run to use retry results
-        if (retryRun.code === 0 && existsSync(outPath)) {
-          logger.info('Fallback TSA succeeded!', { reqId, tsaUrl: manifest.ta_url });
-          run.code = retryRun.code;
-          run.stdout = retryRun.stdout;
-          run.stderr = retryRun.stderr;
-        } else {
-          logger.error('Both TSAs failed', {
-            reqId,
-            staging: { url: 'https://api.staging.c2pa.ssl.com/v1/timestamp', error: run.stderr.slice(0, 200) },
-            fallback: { url: 'https://api.c2patool.io/v1/timestamp', error: retryRun.stderr.slice(0, 200) }
-          });
-        }
-      } else if (manifest.ta_url?.includes('api.c2patool.io')) {
-        logger.error('New domain TSA failed', {
-          reqId,
-          tsaUrl: manifest.ta_url,
-          error: run.stderr,
-          note: 'api.c2patool.io TSA endpoint may not be deployed yet. Contact SSL.com team.'
-        });
-      }
-    }
+    // TSA should work on first try with correct endpoint
+    // No fallback chain needed since we're using the working RSA endpoint
 
     if (run.code !== 0 || !existsSync(outPath)) {
       logger.error('c2patool sign failed', { reqId, code: run.code, stderr: run.stderr });

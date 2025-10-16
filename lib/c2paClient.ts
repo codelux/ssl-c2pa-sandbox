@@ -243,22 +243,73 @@ export async function signImageWithManifest(opts: SignOpts): Promise<Blob> {
 
 export async function verifyAsset(file: File | Blob): Promise<unknown> {
   const c2paMod = await loadC2pa();
-  let c2pa: any = c2paMod;
-  if (typeof c2paMod.C2pa?.create === 'function') {
-    try {
-      c2pa = await c2paMod.C2pa.create({ wasmSrc: publicC2paAsset('toolkit_bg.wasm'), workerSrc: publicC2paAsset('c2pa.worker.js') });
-    } catch {
-      // try using module directly
-      c2pa = c2paMod;
-    }
+  console.log('[C2PA Verify] Module loaded, checking for createC2pa...');
+
+  // Check if createC2pa factory function exists
+  if (typeof c2paMod.createC2pa !== 'function') {
+    console.error('[C2PA Verify] createC2pa not found. Available exports:', Object.keys(c2paMod));
+    throw new Error('c2pa library does not export createC2pa. Make sure c2pa package is installed correctly.');
   }
 
-  if (typeof c2pa.verify === 'function') {
-    return await c2pa.verify(file);
+  // Try to initialize C2PA with WASM/worker assets
+  const wasmCandidates = [
+    'toolkit_bg.wasm',
+    'c2pa_wasm_bg.wasm',
+    'c2pa_wasm.wasm',
+  ];
+  const workerCandidates = [
+    'c2pa.worker.js',
+    'c2pa_worker.js',
+    'worker.js',
+  ];
+
+  const initErrors: string[] = [];
+  let c2pa: any = null;
+
+  for (const wasm of wasmCandidates) {
+    for (const worker of workerCandidates) {
+      try {
+        console.log(`[C2PA Verify] Trying createC2pa with ${wasm}/${worker}`);
+        c2pa = await c2paMod.createC2pa({
+          wasmSrc: publicC2paAsset(wasm),
+          workerSrc: publicC2paAsset(worker),
+        });
+        console.log('[C2PA Verify] createC2pa succeeded!');
+        break;
+      } catch (e: any) {
+        const msg = e?.message || String(e);
+        console.warn(`[C2PA Verify] createC2pa failed with ${wasm}/${worker}:`, msg);
+        initErrors.push(`${wasm}/${worker}: ${msg}`);
+      }
+    }
+    if (c2pa) break;
   }
-  if (typeof c2pa.read === 'function') {
-    return await c2pa.read({ file });
+
+  if (!c2pa) {
+    console.error('[C2PA Verify] All initialization attempts failed');
+    throw new Error(
+      `Failed to initialize C2PA library. Ensure WASM/worker assets are in /public/c2pa.\n\n` +
+      `Tried combinations:\n${initErrors.join('\n')}\n\n` +
+      `Run: npm run copy:c2pa`
+    );
   }
-  throw new Error('C2PA verify/read API not found');
+
+  // Now use the read() method on the initialized instance
+  console.log('[C2PA Verify] Instance created, calling read()...');
+  try {
+    const result = await c2pa.read(file);
+    console.log('[C2PA Verify] read() succeeded, result:', result);
+
+    // The result has { manifestStore, source }
+    // We need to return the manifestStore in a format compatible with the UI
+    if (result?.manifestStore) {
+      return result.manifestStore;
+    }
+    return result;
+  } catch (e: any) {
+    const msg = e?.message || String(e);
+    console.error('[C2PA Verify] read() failed:', msg, e);
+    throw new Error(`C2PA read failed: ${msg}`);
+  }
 }
 /* eslint-disable @typescript-eslint/no-explicit-any */
