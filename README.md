@@ -4,11 +4,29 @@ Official documentation and examples for integrating SSL.com's C2PA (Coalition fo
 
 ## What is C2PA?
 
-C2PA is an open technical standard that provides publishers, creators, and consumers the ability to trace the origin of different types of media. SSL.com provides C2PA certificate issuance and timestamping services that allow you to:
+C2PA (Coalition for Content Provenance and Authenticity) is an open technical standard that provides publishers, creators, and consumers the ability to trace the origin of different types of media. SSL.com provides C2PA certificate issuance and timestamping services that allow you to:
 
 - **Issue C2PA certificates** for signing digital content
+- **Sign images and media** with cryptographic proof of origin
 - **Timestamp signatures** with RFC 3161 compliant timestamps
-- **Verify content provenance** with cryptographic proof
+- **Embed assertions** (metadata about creation, edits, authorship)
+- **Verify content provenance** and detect tampering
+- **Inspect manifest data** from signed assets
+
+## Key Features
+
+This repository provides:
+
+1. **Complete API Documentation** - Detailed guides for integrating SSL.com's C2PA certificate and timestamping APIs
+2. **Web-Based Testing Tool** - Interactive browser application for:
+   - Generating EC P-256 keypairs and Certificate Signing Requests (CSRs)
+   - Requesting C2PA certificates from SSL.com
+   - Signing images with custom manifests and assertions
+   - Inspecting C2PA manifests from any signed image
+   - Testing both ECC and RSA timestamp authorities
+3. **Code Examples** - Working examples in cURL, JavaScript, and Python
+4. **Manifest Presets** - Pre-configured manifest templates (minimal, editorial)
+5. **Trust Bundle Downloads** - Access to SSL.com's C2PA trust anchors
 
 ## API Overview
 
@@ -305,6 +323,18 @@ Download trust anchors for validating C2PA signatures:
 - **ECC Trust Bundle:** https://api.c2patool.io/repository/C2PA-ECC-TRUST-BUNDLE.pem
 - **RSA Trust Bundle:** https://api.c2patool.io/repository/C2PA-RSA-TRUST-BUNDLE.pem
 
+### Manifest Inspector
+
+The testing tool includes a built-in **C2PA Manifest Inspector** that allows you to:
+- Upload any C2PA-signed image to inspect its manifest
+- View manifest details (title, format, instance ID, claim generator)
+- Examine signature information (algorithm, issuer, common name, timestamp)
+- Browse all assertions embedded in the manifest
+- See validation results with color-coded status indicators
+- Test how tampering or modifications affect signature validity
+
+**Note:** This inspector uses the official C2PA library to read manifest data, but is not a certified validation product. For production validation, use [Content Credentials Verify](https://contentcredentials.org/verify) or other certified tools.
+
 ---
 
 ## Complete Workflow Example
@@ -415,7 +445,7 @@ Contact SSL.com support if you need higher rate limits for production use.
 
 ## Testing Tool
 
-This repository includes a web-based testing tool for experimenting with the APIs:
+This repository includes a comprehensive web-based testing tool for experimenting with the APIs:
 
 ```bash
 npm install
@@ -423,10 +453,14 @@ npm run dev
 ```
 
 Visit `http://localhost:3000` to:
-- Generate test CSRs
-- Request certificates interactively
-- View example cURL commands
-- Test signing and verification
+- **Generate EC P-256 keypairs and CSRs** in the browser
+- **Request C2PA certificates** from SSL.com interactively
+- **Sign images** with your certificates and manifests
+- **Inspect C2PA manifests** from signed images to view assertions, signatures, and validation results
+- **View example cURL commands** with your actual parameters
+- **Download** private keys, certificates, CSRs, and signed assets
+- **Test TSA endpoints** with both ECC and RSA timestamp servers
+- **Validate manifest JSON** with built-in schema validation
 
 ## Support
 
