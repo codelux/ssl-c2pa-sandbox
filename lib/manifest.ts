@@ -17,7 +17,7 @@ export const Presets: Record<string, Manifest> = {
     assertions: [
       { label: 'c2pa.actions', data: { actions: [{ action: 'c2pa.created' }] } },
     ],
-    ta_url: 'https://api.c2patool.io/v1/timestamp',
+    ta_url: 'https://api.c2patool.io/api/v1/timestamps/ecc',
   },
   editorial: {
     title: 'Editorial image',
@@ -26,6 +26,6 @@ export const Presets: Record<string, Manifest> = {
       { label: 'c2pa.actions', data: { actions: [{ action: 'c2pa.edited' }] } },
       { label: 'org.iptc.ext', data: { creditLine: 'SSL.com Preview' } },
     ],
-    ta_url: 'https://api.c2patool.io/v1/timestamp',
+    ta_url: 'https://api.c2patool.io/api/v1/timestamps/ecc',
   },
 };
