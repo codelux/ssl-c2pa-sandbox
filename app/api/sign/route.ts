@@ -3,7 +3,7 @@ import { rid } from '@/lib/ids';
 import { rateLimit } from '@/lib/rateLimit';
 import { logger } from '@/lib/logger';
 import { tmpdir } from 'node:os';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, accessSync, constants, chmodSync } from 'node:fs';
 import { join, isAbsolute, extname } from 'node:path';
 import { spawn } from 'node:child_process';
 
@@ -231,6 +231,20 @@ export async function POST(req: Request) {
       const candidate = join(process.cwd(), c2paTool);
       if (existsSync(candidate)) {
         c2paTool = candidate;
+      }
+    }
+
+    // If we resolved a concrete path (vs relying on PATH), make sure the binary is executable
+    if (existsSync(c2paTool)) {
+      try {
+        accessSync(c2paTool, constants.X_OK);
+      } catch {
+        try {
+          chmodSync(c2paTool, 0o755);
+          logger.info('Added execute permission to c2patool binary', { reqId, path: c2paTool });
+        } catch (err) {
+          logger.warn('Failed to ensure execute permission for c2patool binary', { reqId, path: c2paTool, error: String(err) });
+        }
       }
     }
 
