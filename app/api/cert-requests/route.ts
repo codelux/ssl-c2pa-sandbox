@@ -7,6 +7,33 @@ import { rateLimit } from '@/lib/rateLimit';
 
 // Env shape is validated via getEnv()
 
+/**
+ * Extract ONLY the first (leaf) certificate from a PEM string that may contain
+ * multiple certificates (a chain). c2patool expects only the leaf cert, not the chain.
+ *
+ * Also normalizes line endings and whitespace.
+ */
+function extractLeafCertificate(pem: string): string {
+  // Normalize line endings to \n
+  let cleaned = pem.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // Remove any leading/trailing whitespace
+  cleaned = cleaned.trim();
+
+  // Find all certificate boundaries
+  const certRegex = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
+  const matches = cleaned.match(certRegex);
+
+  if (!matches || matches.length === 0) {
+    // No valid certificate found, return as-is and let downstream handle the error
+    return cleaned;
+  }
+
+  // Return ONLY the first certificate (leaf cert)
+  // The chain typically goes: [leaf, intermediate(s), root]
+  return matches[0].trim();
+}
+
 const ReqSchema = z.object({
   csr: z.string().min(1),
   profileId: z.string().optional(),
@@ -129,6 +156,15 @@ export async function POST(req: Request) {
         logger.error('No certificate found in API response', { reqId, responseKeys: Object.keys(json), firstCert });
         return NextResponse.json({ error: 'No certificate in response', reqId }, { status: 500 });
       }
+
+      // Clean and extract ONLY the leaf certificate (c2patool doesn't want the full chain)
+      certificatePem = extractLeafCertificate(certificatePem);
+
+      logger.info('Returning cleaned certificate', {
+        reqId,
+        certLength: certificatePem.length,
+        certPreview: certificatePem.slice(0, 150)
+      });
 
       return NextResponse.json({ certificatePem, requestId: reqId, meta: json.meta });
     } catch (e: any) {
