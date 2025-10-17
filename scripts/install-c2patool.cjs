@@ -21,11 +21,13 @@ const {
 const { join, dirname } = require('path');
 const { get } = require('https');
 const { execSync } = require('child_process');
+const { homedir } = require('os');
 
 const GITHUB_RELEASE_URL = 'https://api.github.com/repos/contentauth/c2patool/releases/latest';
 const BIN_DIR = join(process.cwd(), 'bin');
 const BINARY_NAME = process.platform === 'win32' ? 'c2patool.exe' : 'c2patool';
 const LOCAL_C2PATOOL_PATH = join(BIN_DIR, BINARY_NAME);
+const HOME_C2PATOOL_PATH = join(homedir(), 'bin', 'c2patool', BINARY_NAME);
 
 function hasExecutePermission(binaryPath) {
   if (!binaryPath || !existsSync(binaryPath)) {
@@ -122,7 +124,7 @@ function ensureC2patoolEnv(binaryPath) {
     return;
   }
 
-  const envFiles = ['.env.production', '.env.local'];
+  const envFiles = ['.env.production', '.env.local', '.env'];
   for (const file of envFiles) {
     ensureEnvValue(join(process.cwd(), file), 'C2PATOOL_PATH', binaryPath);
   }
@@ -147,11 +149,19 @@ function resolveSystemC2patool() {
 
 // Check if c2patool already exists
 function findExistingC2patool() {
-  if (existsSync(LOCAL_C2PATOOL_PATH)) {
-    if (ensureExecutable(LOCAL_C2PATOOL_PATH)) {
-      console.log(`✓ c2patool found at ${LOCAL_C2PATOOL_PATH}`);
+  const candidates = [
+    process.env.C2PATOOL_PATH,
+    LOCAL_C2PATOOL_PATH,
+    HOME_C2PATOOL_PATH
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      if (ensureExecutable(candidate)) {
+        console.log(`✓ c2patool found at ${candidate}`);
+      }
+      return candidate;
     }
-    return LOCAL_C2PATOOL_PATH;
   }
 
   const systemBinary = resolveSystemC2patool();
