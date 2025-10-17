@@ -5,31 +5,163 @@
  * Downloads the appropriate version for the current platform
  */
 
-const { existsSync, mkdirSync, chmodSync, createWriteStream } = require('fs');
-const { join } = require('path');
+const {
+  existsSync,
+  mkdirSync,
+  chmodSync,
+  createWriteStream,
+  accessSync,
+  constants,
+  readdirSync,
+  renameSync,
+  unlinkSync,
+  readFileSync,
+  writeFileSync
+} = require('fs');
+const { join, dirname } = require('path');
 const { get } = require('https');
 const { execSync } = require('child_process');
 
 const GITHUB_RELEASE_URL = 'https://api.github.com/repos/contentauth/c2patool/releases/latest';
 const BIN_DIR = join(process.cwd(), 'bin');
-const C2PATOOL_PATH = join(BIN_DIR, 'c2patool');
+const BINARY_NAME = process.platform === 'win32' ? 'c2patool.exe' : 'c2patool';
+const LOCAL_C2PATOOL_PATH = join(BIN_DIR, BINARY_NAME);
 
-// Check if c2patool already exists
-function isC2patoolInstalled() {
-  // Check in local bin directory
-  if (existsSync(C2PATOOL_PATH)) {
-    console.log('✓ c2patool found in ./bin/c2patool');
-    return true;
+function hasExecutePermission(binaryPath) {
+  if (!binaryPath || !existsSync(binaryPath)) {
+    return false;
   }
 
-  // Check if available in PATH
   try {
-    execSync('c2patool --version', { stdio: 'ignore' });
-    console.log('✓ c2patool found in system PATH');
+    accessSync(binaryPath, constants.X_OK);
     return true;
   } catch {
     return false;
   }
+}
+
+function ensureExecutable(binaryPath) {
+  if (!binaryPath || !existsSync(binaryPath)) {
+    return false;
+  }
+
+  if (hasExecutePermission(binaryPath)) {
+    return true;
+  }
+
+  try {
+    chmodSync(binaryPath, 0o755);
+    if (hasExecutePermission(binaryPath)) {
+      console.log(`🔧 Updated permissions on ${binaryPath}`);
+      return true;
+    }
+  } catch (err) {
+    console.warn(`⚠️  Unable to mark ${binaryPath} as executable: ${err.message}`);
+  }
+
+  return hasExecutePermission(binaryPath);
+}
+
+function findBinaryInDir(dir) {
+  const entries = readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const entryPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const found = findBinaryInDir(entryPath);
+      if (found) {
+        return found;
+      }
+    } else if (/^c2patool(\.exe)?$/i.test(entry.name)) {
+      return entryPath;
+    }
+  }
+  return null;
+}
+
+function ensureEnvValue(filePath, key, value) {
+  const line = `${key}=${value}`;
+  try {
+    if (!existsSync(filePath)) {
+      mkdirSync(dirname(filePath), { recursive: true });
+      writeFileSync(filePath, `${line}\n`);
+      console.log(`   Created ${filePath} with ${line}`);
+      return;
+    }
+
+    const content = readFileSync(filePath, 'utf8');
+    const regex = new RegExp(`^${key}=.*$`, 'm');
+    const match = content.match(regex);
+    if (match) {
+      const currentValue = match[0].split('=')[1].trim();
+      if (currentValue && currentValue !== value) {
+        if (hasExecutePermission(currentValue)) {
+          console.log(`   ${filePath} already sets ${key}=${currentValue}`);
+          return;
+        }
+        console.log(`   ${filePath} has ${key} pointing to non-executable path (${currentValue}), updating...`);
+      }
+
+      if (match[0] !== line) {
+        const updated = content.replace(regex, line);
+        writeFileSync(filePath, updated);
+        console.log(`   Updated ${filePath} with ${line}`);
+      }
+      return;
+    }
+
+    const suffix = content.endsWith('\n') ? '' : '\n';
+    writeFileSync(filePath, `${content}${suffix}${line}\n`);
+    console.log(`   Added ${line} to ${filePath}`);
+  } catch (err) {
+    console.warn(`⚠️  Unable to update ${filePath}: ${err.message}`);
+  }
+}
+
+function ensureC2patoolEnv(binaryPath) {
+  if (!binaryPath) {
+    return;
+  }
+
+  const envFiles = ['.env.production', '.env.local'];
+  for (const file of envFiles) {
+    ensureEnvValue(join(process.cwd(), file), 'C2PATOOL_PATH', binaryPath);
+  }
+
+  process.env.C2PATOOL_PATH = binaryPath;
+  console.log(`✅ C2PATOOL_PATH set to ${binaryPath}`);
+}
+
+function resolveSystemC2patool() {
+  try {
+    const whichCmd = process.platform === 'win32' ? 'where c2patool' : 'which c2patool';
+    const output = execSync(whichCmd, { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' })
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean);
+    if (output.length > 0) {
+      return output[0];
+    }
+  } catch {}
+  return null;
+}
+
+// Check if c2patool already exists
+function findExistingC2patool() {
+  if (existsSync(LOCAL_C2PATOOL_PATH)) {
+    if (ensureExecutable(LOCAL_C2PATOOL_PATH)) {
+      console.log(`✓ c2patool found at ${LOCAL_C2PATOOL_PATH}`);
+    }
+    return LOCAL_C2PATOOL_PATH;
+  }
+
+  const systemBinary = resolveSystemC2patool();
+  if (systemBinary) {
+    console.log(`✓ c2patool found in system PATH: ${systemBinary}`);
+    ensureExecutable(systemBinary);
+    return systemBinary;
+  }
+
+  return null;
 }
 
 // Detect platform and return pattern to match asset names
@@ -135,7 +267,9 @@ function extractArchive(archivePath, isZip) {
 async function installC2patool() {
   console.log('🔍 Checking for c2patool...');
 
-  if (isC2patoolInstalled()) {
+  const existing = findExistingC2patool();
+  if (existing) {
+    ensureC2patoolEnv(existing);
     return;
   }
 
@@ -176,20 +310,26 @@ async function installC2patool() {
       throw new Error('Extraction failed');
     }
 
-    // The binary might be in a subdirectory after extraction
-    const extractedBinary = join(BIN_DIR, 'c2patool');
-    if (existsSync(extractedBinary)) {
-      // Make executable on Unix systems
-      if (platform !== 'win32') {
-        chmodSync(extractedBinary, 0o755);
-      }
-
-      console.log('✅ c2patool installed successfully!');
-      console.log(`   Location: ${extractedBinary}`);
-      console.log(`   Set C2PATOOL_PATH=${extractedBinary} in your .env if needed`);
-    } else {
-      console.log('⚠️  Binary extracted but location unclear. Check ./bin/ directory');
+    let extractedBinary = findBinaryInDir(BIN_DIR);
+    if (!extractedBinary) {
+      throw new Error('Binary extracted but not found');
     }
+
+    if (extractedBinary !== LOCAL_C2PATOOL_PATH) {
+      mkdirSync(BIN_DIR, { recursive: true });
+      renameSync(extractedBinary, LOCAL_C2PATOOL_PATH);
+      extractedBinary = LOCAL_C2PATOOL_PATH;
+    }
+
+    try { unlinkSync(archivePath); } catch {}
+
+    if (!ensureExecutable(extractedBinary)) {
+      console.warn('⚠️  Installed c2patool but could not verify it is executable');
+    }
+
+    console.log('✅ c2patool installed successfully!');
+    console.log(`   Location: ${extractedBinary}`);
+    ensureC2patoolEnv(extractedBinary);
 
   } catch (error) {
     console.error('❌ Failed to install c2patool:', error.message);

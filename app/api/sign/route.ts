@@ -224,7 +224,18 @@ export async function POST(req: Request) {
     }
 
     // Path to c2patool binary (env or default in PATH)
-    let c2paTool = process.env.C2PATOOL_PATH || 'c2patool';
+    let c2paTool = process.env.C2PATOOL_PATH || '';
+    const localBinaryName = process.platform === 'win32' ? 'c2patool.exe' : 'c2patool';
+    const localBinary = join(process.cwd(), 'bin', localBinaryName);
+
+    if (!c2paTool && existsSync(localBinary)) {
+      c2paTool = localBinary;
+    }
+
+    if (!c2paTool) {
+      c2paTool = 'c2patool';
+    }
+
     // If caller provided a relative path (e.g., ./c2patool in project root), make it absolute
     if (!isAbsolute(c2paTool)) {
       // Prefer project-root relative resolution

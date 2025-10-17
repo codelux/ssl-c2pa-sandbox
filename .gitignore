@@ -3,5 +3,7 @@ node_modules/
 c2patool*
 bin/
 .env
+.env.local
+.env.production
 .next/cache/
 .next/static/webpack/*.hot-update.*

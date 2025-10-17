@@ -10,7 +10,7 @@
     "lint": "next lint",
     "copy:c2pa": "node scripts/copy-c2pa-assets.cjs",
     "install:c2patool": "node scripts/install-c2patool.cjs",
-    "postinstall": "node scripts/copy-c2pa-assets.cjs || true && node scripts/install-c2patool.cjs || true",
+    "postinstall": "(node scripts/copy-c2pa-assets.cjs || true) && (node scripts/install-c2patool.cjs || true)",
     "typecheck": "tsc --noEmit",
     "qa": "npm run lint && npm run typecheck && npm run build"
   },
