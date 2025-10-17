@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "functions": {
+    "/api/tsa/timestamp": {},
+    "/api/sign": {}
+  }
+}

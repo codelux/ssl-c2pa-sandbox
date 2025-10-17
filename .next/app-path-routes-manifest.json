@@ -1,0 +1,8 @@
+{
+  "/api/cert-requests/route": "/api/cert-requests",
+  "/_not-found/page": "/_not-found",
+  "/api/tsa/timestamp/route": "/api/tsa/timestamp",
+  "/api/sign/route": "/api/sign",
+  "/docs/page": "/docs",
+  "/page": "/"
+}

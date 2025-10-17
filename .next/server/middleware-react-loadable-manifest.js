@@ -1,1 +1,1 @@
-self.__REACT_LOADABLE_MANIFEST="{\"lib/c2paClient.ts -> c2pa\":{\"id\":\"lib/c2paClient.ts -> c2pa\",\"files\":[\"static/chunks/_app-pages-browser_node_modules_c2pa_dist_c2pa_esm_js.js\"]}}"
+self.__REACT_LOADABLE_MANIFEST='{"lib/c2paClient.ts -> c2pa":{"id":3846,"files":["static/chunks/fe8234e5.a492ed4f905f45d1.js"]}}';

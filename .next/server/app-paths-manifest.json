@@ -1,3 +1,8 @@
 {
+  "/api/cert-requests/route": "app/api/cert-requests/route.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/tsa/timestamp/route": "app/api/tsa/timestamp/route.js",
+  "/api/sign/route": "app/api/sign/route.js",
+  "/docs/page": "app/docs/page.js",
   "/page": "app/page.js"
 }
