@@ -9,6 +9,27 @@ import { spawn } from 'node:child_process';
 
 export const runtime = 'nodejs';
 
+/**
+ * Extract ONLY the first (leaf) certificate from a PEM string that may contain
+ * multiple certificates (a chain). c2patool expects only the leaf cert, not the chain.
+ */
+function extractLeafCertificate(pem: string): string {
+  // Normalize line endings to \n
+  let cleaned = pem.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  cleaned = cleaned.trim();
+
+  // Find all certificate boundaries
+  const certRegex = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
+  const matches = cleaned.match(certRegex);
+
+  if (!matches || matches.length === 0) {
+    return cleaned; // No valid certificate found, return as-is
+  }
+
+  // Return ONLY the first certificate (leaf cert)
+  return matches[0].trim();
+}
+
 function spawnAsync(cmd: string, args: string[], cwd?: string): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { cwd });
@@ -61,8 +82,8 @@ export async function POST(req: Request) {
 
     // Write user credentials to temp files if provided
     if (useUserCredentials) {
-      // Clean up line endings - ensure Unix-style \n instead of \r\n
-      const cleanCert = (certPem as string).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      // Extract ONLY the leaf certificate (c2patool doesn't want the full chain)
+      const cleanCert = extractLeafCertificate(certPem as string);
       const cleanKey = (privateKeyPem as string).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
       logger.info('Writing user credentials', {
